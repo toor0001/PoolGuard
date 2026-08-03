@@ -26,7 +26,8 @@ Die folgende Liste wird nach und nach um Bezugsquellen ergänzt:
 
 | Bauteil | Verwendung | Link |
 |---|---|---|
-| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | – |
+| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | [Amazon](https://link.amazon/B0iQQg2zF) |
+| USB-C Breakout-Kabel | Stromversorgung / Anschluss | [Amazon](https://link.amazon/B0eO8jr4N) |
 | DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | – |
 | Wasserdichter DS18B20 | Wassertemperatur | – |
 | Geschützte 18650 Li-Ion-Zelle | Stromversorgung | – |
@@ -34,7 +35,7 @@ Die folgende Liste wird nach und nach um Bezugsquellen ergänzt:
 | MOSFET / Load-Switch | Abschalten des A02YYUW im Deep Sleep | – |
 | Externe 2,4-GHz-WLAN-Antenne | Verbesserung der WLAN-Verbindung | – |
 
-> **Affiliate-Hinweis:** Einige der künftig hier verlinkten Produktlinks können Affiliate-Links sein. Wenn du über einen solchen Link etwas kaufst, erhalte ich möglicherweise eine kleine Provision. Für dich ändert sich der Preis dadurch nicht. Damit unterstützt du die Weiterentwicklung meiner DIY-Projekte.
+> **Affiliate-Hinweis:** Einige der hier verlinkten Produktlinks können Affiliate-Links sein. Wenn du über einen solchen Link etwas kaufst, erhalte ich möglicherweise eine kleine Provision. Für dich ändert sich der Preis dadurch nicht. Damit unterstützt du die Weiterentwicklung meiner DIY-Projekte.
 
 ## Mechanisches Konzept
 
