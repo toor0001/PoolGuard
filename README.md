@@ -89,7 +89,7 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 
 ## Support
 
-<a href="https://buymeacoffee.com/toor0001"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=%E2%98%95&slug=toor0001&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000&coffee_colour=ffffff" alt="Buy me a coffee"></a>
+[![Support via PayPal](https://img.shields.io/badge/PayPal-Support-0070BA?logo=paypal&logoColor=white)](https://paypal.me/toor0001)
 
 ## License
 
