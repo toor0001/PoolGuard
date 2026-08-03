@@ -4,25 +4,24 @@
 
 [Deutsch](README_DE.md) · English
 
-PoolGuard is a DIY sensor module designed to fit precisely into the lid of an **AstralPool 17.5 L skimmer** and can be glued in place without drilling the original lid. The module measures the distance to the water surface and therefore the current pool level. It also monitors the pool-water temperature. By analysing movement and short-term fluctuations at the water surface, PoolGuard can additionally estimate whether the circulation pump is currently running. Significantly stronger and more irregular surface movement can also indicate that someone is currently in the pool. The electronics are designed for extremely low power consumption. By using deep sleep and fully powering down the sensors between measurements, the goal is to run PoolGuard for an entire pool season on a single battery charge.
+PoolGuard is a DIY sensor module designed to fit precisely into the lid of an **AstralPool 17.5 L skimmer** and can be glued in place without drilling the original lid. The module measures the distance to the water surface and derives the current pool-water depth and level. It also monitors pool-water temperature. By analysing movement and short-term fluctuations at the water surface, PoolGuard can additionally estimate whether the circulation pump is running. Significantly stronger and more irregular surface movement can indicate that somebody is currently in the pool. The electronics are designed for very low power consumption. Deep sleep and fully powering down the A02YYUW between checks are intended to make one battery charge last for an entire pool season.
 
 ## Home Assistant possibilities
 
-PoolGuard data can be used to build automations such as:
+PoolGuard exposes values and states that can be used for automations such as:
 
-- switching a pool heat pump on or off based on the measured water temperature;
-- disabling the circulation pump when the water level is too low, helping to prevent dry running;
-- sending a warning when the pool level is too high or too low;
-- operating a UV-C lamp only while active water circulation is actually detected;
-- detecting unusually strong pool activity that can indicate somebody is in the pool.
+- switching a pool heat pump on or off based on water temperature;
+- disabling the circulation pump when the water level is too low;
+- sending a notification when the minimum safe water depth is crossed;
+- operating a UV-C lamp only while circulation is actually detected;
+- detecting unusually strong pool activity that can indicate somebody is in the pool;
+- displaying current water depth, water-level percentage and estimated pool volume.
 
 > **Project status:** prototype / work in progress. Do not drill, cut or permanently glue the original skimmer lid before checking the current version.
 
 > **Name and affiliation:** PoolGuard is an independent open-source DIY project. It is not affiliated with, endorsed by or connected to any company, brand or commercial product using the PoolGuard name.
 
 ## Parts
-
-The following list will be expanded with purchase links over time:
 
 | Part | Purpose | Link |
 |---|---|---|
@@ -35,13 +34,11 @@ The following list will be expanded with purchase links over time:
 | **Pololu Mini MOSFET Slide Switch LV #2810** | Fully powers down the A02YYUW during deep sleep | [Pololu](https://www.pololu.com/product/2810) |
 | External 2.4 GHz Wi-Fi antenna | Improving Wi-Fi reception | – |
 
-> **Affiliate disclosure:** Some of the product links listed here may be affiliate links. If you purchase something through one of these links, I may receive a small commission at no additional cost to you. This helps support the continued development of my DIY projects.
+> **Affiliate disclosure:** Some product links may be affiliate links. If you purchase through one of them, I may receive a small commission at no additional cost to you.
 
 ## A02YYUW power switching
 
-The A02YYUW is powered through a ready-made **Pololu Mini MOSFET Slide Switch with Reverse Voltage Protection, LV (#2810)**. The module operates from 2 V and is therefore suitable for the XIAO ESP32-C3's 3.3 V supply.
-
-For automatic operation, leave the physical slide switch on the Pololu module in the **OFF** position. The ESP32 then controls the module through its `ON` input.
+The A02YYUW is powered through a **Pololu Mini MOSFET Slide Switch with Reverse Voltage Protection, LV (#2810)**.
 
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
@@ -53,44 +50,56 @@ A02YYUW TX  -------- GPIO20
 A02YYUW RX  -------- leave unconnected
 ```
 
-This gives the following behavior:
-
 - **GPIO2 HIGH:** A02YYUW powered on
 - **GPIO2 LOW:** A02YYUW powered off
 - during deep sleep the A02YYUW remains unpowered
 
 ## Measurement and low-power operation
 
-In normal operation PoolGuard wakes roughly once per minute and performs a short A02YYUW measurement burst locally. Wi-Fi remains disabled for these checks. PoolGuard only connects to Wi-Fi immediately when the detected pump, pool-activity or low-water state changes. Water level, water temperature and battery level are additionally reported approximately every 30 minutes.
+In normal operation PoolGuard wakes roughly once per minute and performs a short local A02YYUW measurement burst. Wi-Fi remains disabled for these checks. PoolGuard only connects immediately when the detected pump, pool-activity or low-water state changes. Water depth, water-level percentage, estimated pool volume, water temperature and battery level are additionally reported approximately every 30 minutes.
 
-The last reported states are kept in ESP32 RTC memory during deep sleep. This avoids unnecessary flash writes every minute. If a Wi-Fi/API transmission fails, the state change remains pending and is retried after the next wake-up.
+The last reported states are kept in ESP32 RTC memory during deep sleep. If a Wi-Fi/API transmission fails, the state change remains pending and is retried after the next wake-up.
+
+## Water-level reference calibration
+
+PoolGuard no longer requires separate "empty" and "full" distance calibration points. One known real water depth is enough.
+
+For initial commissioning, temporarily set `calibration_mode_on_boot: "true"` in `esphome/poolguard.yaml` and flash the XIAO. Then:
+
+1. Measure the **actual current water depth** in the pool in centimetres.
+2. Enter this value in the Home Assistant number entity **Reference Water Depth**.
+3. Press **Set Water Level Reference** while the water remains at that same level.
+4. PoolGuard stores the current A02 distance together with the known real water depth.
+5. Enter the real **Minimum Safe Water Depth** at which the skimmer can still supply the circulation pump safely.
+
+From then on, PoolGuard calculates the current depth from the change in A02 distance. The distance from the sensor to the pool bottom does not have to be measured separately.
+
+The default geometry in the YAML is a round pool with **5.0 m diameter** and **120 cm maximum depth**. `Water Level` is calculated as a percentage of that configured maximum depth. `Pool Volume` assumes a cylindrical pool and uses the current measured water depth. With the default geometry, 120 cm corresponds to approximately **23.56 m³**. For another pool, change `pool_diameter_m` and `pool_max_depth_cm` in the YAML. Pools with non-cylindrical bottoms will only get an approximate volume.
 
 ## Guided motion calibration
 
-Pump and pool-activity detection depend heavily on the actual skimmer, pump flow, water level and pool geometry. PoolGuard therefore includes a guided calibration mode instead of relying only on fixed thresholds.
+Pump and pool-activity detection depend heavily on the actual skimmer, pump flow, water level and pool geometry. PoolGuard therefore includes guided calibration instead of relying only on fixed thresholds.
 
-For initial commissioning, temporarily set `calibration_mode_on_boot: "true"` in `esphome/poolguard.yaml` and flash the XIAO. PoolGuard then stays awake and connected to Home Assistant. Run the three calibration buttons in this order:
+In calibration mode run these three buttons in order:
 
 1. **Calibrate Quiet Water** – pump off and nobody in the pool.
 2. **Calibrate Pump** – circulation pump running, nobody in the pool.
 3. **Calibrate Person** – normal swimming/bathing movement in the pool.
 
-Each phase measures about 60 seconds. Internally this is split into twelve five-second windows. PoolGuard stores the **median** water-motion range, so one unusual splash should not dominate the calibration. When the learned profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically places the pump threshold halfway between quiet and pump, and the person/activity threshold halfway between pump and person.
+Each phase measures about 60 seconds and stores the median motion profile. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically calculates the pump and person/activity thresholds. If they overlap, the previous or fallback thresholds remain active.
 
-The learned values are stored persistently and survive normal power cycles. If the three profiles overlap or are in the wrong order, the previous/fallback thresholds remain active and the calibration should be repeated. Diagnostic entities in Home Assistant show the three learned motion profiles, the active thresholds and the current calibration status.
+After water-level and motion calibration, set `calibration_mode_on_boot` back to `false` and flash PoolGuard again for normal battery-saving operation.
 
-After calibration, set `calibration_mode_on_boot` back to `false` and flash PoolGuard once more to return to the normal battery-saving mode.
-
-> **Important:** PoolGuard does not detect a person directly. It classifies water-surface motion. Pump/activity detection is therefore an experimental indication and must not be used as a safety system or as a substitute for pool supervision.
+> **Important:** PoolGuard does not detect a person directly. It classifies water-surface motion. Pump/activity detection is therefore an experimental indication and must not be used as a safety system or substitute for pool supervision.
 
 ## Mechanical concept
 
-The housing body sits inside the skimmer and will later be fixed to the side ribs using suitable neutral-curing silicone. The original centre rib remains completely intact. The removable lower lid carries the electronics:
+The housing body sits inside the skimmer and is fixed to the side ribs using suitable neutral-curing silicone. The original centre rib remains intact. The removable lower lid carries the electronics:
 
 - battery holder and ESP on the dry/internal side;
 - A02YYUW on the water-facing side;
 - feed-through for the DS18B20 cable;
-- external Wi-Fi antenna positioned as close as possible to the plastic skimmer lid.
+- external Wi-Fi antenna positioned close to the plastic skimmer lid.
 
 The current printable files are available in [`3D-Files/`](3D-Files/).
 
@@ -98,12 +107,13 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 
 1. Download and print the current files from `3D-Files/`.
 2. Use `esphome/secrets.example.yaml` as a template for your own ESPHome secrets.
-3. Review all pins and calibration values in `esphome/poolguard.yaml`.
-4. Flash the XIAO ESP32-C3 via USB first.
-5. Calibrate `distance_empty_cm` and `distance_full_cm` with the module installed in the skimmer.
-6. Determine the real minimum safe water level for your skimmer/pump and adjust `min_safe_water_level_percent`.
-7. Run the guided quiet-water, pump and person/activity calibration described above.
-8. Return `calibration_mode_on_boot` to `false` and flash the normal low-power configuration.
+3. Review pins, pool geometry and calibration values in `esphome/poolguard.yaml`.
+4. Flash the XIAO ESP32-C3 via USB.
+5. Set `calibration_mode_on_boot: "true"` and flash the commissioning configuration.
+6. Measure the real water depth, enter **Reference Water Depth** and press **Set Water Level Reference**.
+7. Set **Minimum Safe Water Depth** for the real skimmer/pump installation.
+8. Run the quiet-water, pump and person/activity calibration.
+9. Set `calibration_mode_on_boot` back to `false` and flash the normal low-power configuration.
 
 ## Safety
 
