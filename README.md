@@ -6,7 +6,7 @@
 
 PoolGuard is a DIY sensor module designed to fit precisely into the lid of an **AstralPool 17.5 L skimmer**. It can be installed without drilling or cutting the original lid and secured with a suitable adhesive or neutral-curing silicone.
 
-The module measures the distance to the water surface and therefore the current pool level. It also monitors the pool-water temperature. By analysing movement and short-term fluctuations at the water surface, PoolGuard can additionally estimate whether the circulation pump is currently running.
+The module measures the distance to the water surface and therefore the current pool level. It also monitors the pool-water temperature. By analysing movement and short-term fluctuations at the water surface, PoolGuard can additionally estimate whether the circulation pump is currently running. Significantly stronger and more irregular surface movement can also indicate that someone is currently in the pool.
 
 The electronics are designed for extremely low power consumption. By using deep sleep and fully powering down the sensors between measurements, the goal is to run PoolGuard for an entire pool season on a single battery charge.
 
@@ -17,7 +17,8 @@ PoolGuard data can be used to build automations such as:
 - switching a pool heat pump on or off based on the measured water temperature;
 - disabling the circulation pump when the water level is too low, helping to prevent dry running;
 - sending a warning when the pool level is too high or too low;
-- operating a UV-C lamp only while active water circulation is actually detected.
+- operating a UV-C lamp only while active water circulation is actually detected;
+- **person detection in the pool:** if the water-surface movement is significantly stronger and more irregular than the pattern caused by the circulation pump, PoolGuard can infer that someone is probably swimming or bathing.
 
 > **Project status:** prototype / work in progress. The mechanical fit template is currently being tested. Do not drill, cut or permanently glue the original skimmer lid before checking the current CAD notes.
 
@@ -32,6 +33,7 @@ PoolGuard data can be used to build automations such as:
 - Deep sleep for very long battery life
 - Battery-voltage monitoring through a resistor divider
 - Experimental pump detection from short-term water-surface movement
+- Experimental person detection from significantly stronger and irregular surface movement
 - Local integration with ESPHome and Home Assistant
 - Custom 3D-printed insert designed for the AstralPool skimmer lid
 
@@ -60,7 +62,7 @@ The housing body sits in skimmer compartments 3 and 4 and is bonded to the side 
 3. Review all pins and calibration values in `esphome/poolguard.yaml`.
 4. Flash the XIAO ESP32-C3 by USB.
 5. Calibrate `distance_empty_cm` and `distance_full_cm` in the installed skimmer.
-6. Test several pump-on and pump-off measurement cycles before enabling pump detection.
+6. Compare multiple measurement cycles with the pump on and off, and with and without people in the pool, before enabling pump or person detection.
 
 ## Safety
 
@@ -68,7 +70,7 @@ The housing body sits in skimmer compartments 3 and 4 and is bonded to the side 
 - Do not short, crush or reverse the cell.
 - Keep electronics sealed from condensation and splash water.
 - Use a suitable MOSFET or load switch to fully power down the A02YYUW during deep sleep.
-- Treat pump detection as an indication only, never as the sole safety interlock.
+- Treat pump and person detection as indications only, never as the sole basis for a safety-critical shutdown or monitoring function.
 
 ## Support
 
