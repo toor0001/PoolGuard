@@ -11,8 +11,10 @@ struct PoolGuardRtcState {
 
   int8_t pump_state;
   int8_t person_state;
+  int8_t low_water_state;
   int8_t reported_pump_state;
   int8_t reported_person_state;
+  int8_t reported_low_water_state;
 
   uint8_t pump_on_streak;
   uint8_t pump_off_streak;
@@ -20,5 +22,5 @@ struct PoolGuardRtcState {
   uint8_t person_off_streak;
 };
 
-static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D31;  // "PGM1"
+static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D32;  // "PGM2"
 RTC_DATA_ATTR inline PoolGuardRtcState poolguard_rtc{};
