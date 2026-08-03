@@ -89,7 +89,7 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 
 ## Unterstützung
 
-[![Unterstützen via PayPal](https://img.shields.io/badge/PayPal-Unterstützen-0070BA?logo=paypal&logoColor=white)](https://paypal.me/toor0001)
+[![Spendiere mir einen Kaffee via PayPal](https://img.shields.io/badge/☕_Spendiere_mir_einen_Kaffee-via_PayPal-0070BA?logo=paypal&logoColor=white)](https://paypal.me/toor0001)
 
 ## Lizenz
 
