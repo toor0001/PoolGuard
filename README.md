@@ -16,7 +16,7 @@ PoolGuard data can be used to build automations such as:
 - operating a UV-C lamp only while active water circulation is actually detected;
 - detecting whether someone is in the pool.
 
-> **Project status:** prototype / work in progress. The mechanical fit template is currently being tested. Do not drill, cut or permanently glue the original skimmer lid before checking the current CAD version.
+> **Project status:** prototype / work in progress. Do not drill, cut or permanently glue the original skimmer lid before checking the current version.
 
 > **Name and affiliation:** PoolGuard is an independent open-source DIY project. It is not affiliated with, endorsed by or connected to any company, brand or commercial product using the PoolGuard name.
 
@@ -32,10 +32,32 @@ The following list will be expanded with purchase links over time:
 | Waterproof DS18B20 | Pool-water temperature | [Amazon](https://link.amazon/B08FcJbtj) |
 | Protected 18650 Li-ion cell | Power supply | – |
 | 18650 battery holder | Battery mounting | [Amazon](https://link.amazon/B0hraa6X7) |
-| MOSFET / load switch | Powering down the A02YYUW during deep sleep | – |
+| **Pololu Mini MOSFET Slide Switch LV #2810** | Fully powers down the A02YYUW during deep sleep | [Pololu](https://www.pololu.com/product/2810) |
 | External 2.4 GHz Wi-Fi antenna | Improving Wi-Fi reception | – |
 
 > **Affiliate disclosure:** Some of the product links listed here may be affiliate links. If you purchase something through one of these links, I may receive a small commission at no additional cost to you. This helps support the continued development of my DIY projects.
+
+## A02YYUW power switching
+
+The A02YYUW is powered through a ready-made **Pololu Mini MOSFET Slide Switch with Reverse Voltage Protection, LV (#2810)**. The module operates from 2 V and is therefore suitable for the XIAO ESP32-C3's 3.3 V supply.
+
+For automatic operation, leave the physical slide switch on the Pololu module in the **OFF** position. The ESP32 then controls the module through its `ON` input.
+
+```text
+XIAO 3.3 V  -------- VIN   Pololu 2810
+XIAO GND    -------- GND   Pololu 2810
+GPIO2       -------- ON    Pololu 2810
+Pololu VOUT -------- VCC   A02YYUW
+A02YYUW GND -------- GND
+A02YYUW TX  -------- GPIO20
+A02YYUW RX  -------- leave unconnected
+```
+
+This gives the following behavior:
+
+- **GPIO2 HIGH:** A02YYUW powered on
+- **GPIO2 LOW:** A02YYUW powered off
+- during deep sleep the A02YYUW remains unpowered
 
 ## Mechanical concept
 
@@ -62,7 +84,7 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 - Use a protected, reputable 18650 cell.
 - Do not short, crush, reverse or charge the cell unattended.
 - Keep the electronics protected from condensation and splash water.
-- Use a suitable MOSFET or load switch to fully power down the A02YYUW during deep sleep.
+- Use the Pololu 2810 to fully power down the A02YYUW during deep sleep.
 - Treat pump and person detection as indications only, never as the sole basis for a safety-critical shutdown or monitoring function.
 
 ## Support
