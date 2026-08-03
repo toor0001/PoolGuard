@@ -20,6 +20,22 @@ PoolGuard data can be used to build automations such as:
 
 > **Name and affiliation:** PoolGuard is an independent open-source DIY project. It is not affiliated with, endorsed by or connected to any company, brand or commercial product using the PoolGuard name.
 
+## Parts
+
+The following list will be expanded with purchase links over time:
+
+| Part | Purpose | Link |
+|---|---|---|
+| Seeed Studio XIAO ESP32-C3 | Microcontroller / ESPHome | – |
+| DFRobot A02YYUW | Distance measurement to the water surface | – |
+| Waterproof DS18B20 | Pool-water temperature | – |
+| Protected 18650 Li-ion cell | Power supply | – |
+| 18650 battery holder | Battery mounting | – |
+| MOSFET / load switch | Powering down the A02YYUW during deep sleep | – |
+| External 2.4 GHz Wi-Fi antenna | Improving Wi-Fi reception | – |
+
+> **Affiliate disclosure:** Some of the product links that will be added here may be affiliate links. If you purchase something through one of these links, I may receive a small commission at no additional cost to you. This helps support the continued development of my DIY projects.
+
 ## Mechanical concept
 
 The housing body sits inside the skimmer and will later be fixed to the side ribs using suitable neutral-curing silicone. The original centre rib remains completely intact. The removable lower lid carries the electronics:
