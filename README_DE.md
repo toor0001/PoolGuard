@@ -57,10 +57,7 @@ Der Body sitzt in den Skimmerfächern 3 und 4 und wird später seitlich mit geei
 
 ## Unterstützung
 
-<!-- CHANGE_ME später durch den Buy-Me-a-Coffee-Benutzernamen ersetzen. -->
-<a href="https://www.buymeacoffee.com/CHANGE_ME"><img src="https://img.buymeacoffee.com/button-api/?text=Spendiere%20mir%20einen%20Kaffee&emoji=%E2%98%95&slug=CHANGE_ME&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000&coffee_colour=ffffff" alt="Spendiere mir einen Kaffee"></a>
-
-Der Link bleibt ein Platzhalter, bis das endgültige Buy-Me-a-Coffee-Profil feststeht.
+<a href="https://buymeacoffee.com/toor0001"><img src="https://img.buymeacoffee.com/button-api/?text=Spendiere%20mir%20einen%20Kaffee&emoji=%E2%98%95&slug=toor0001&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000&coffee_colour=ffffff" alt="Spendiere mir einen Kaffee"></a>
 
 ## Lizenz
 
