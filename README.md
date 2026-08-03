@@ -57,10 +57,7 @@ The housing body sits in skimmer compartments 3 and 4 and is bonded to the side 
 
 ## Support
 
-<!-- Replace CHANGE_ME with the final Buy Me a Coffee profile name. -->
-<a href="https://www.buymeacoffee.com/CHANGE_ME"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=%E2%98%95&slug=CHANGE_ME&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000&coffee_colour=ffffff" alt="Buy me a coffee"></a>
-
-The support link is intentionally a placeholder until the project owner supplies the final Buy Me a Coffee profile name.
+<a href="https://buymeacoffee.com/toor0001"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=%E2%98%95&slug=toor0001&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000&coffee_colour=ffffff" alt="Buy me a coffee"></a>
 
 ## License
 
