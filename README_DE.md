@@ -94,7 +94,7 @@ Nach Wasserstands- und Bewegungs-Kalibrierung wird `calibration_mode_on_boot` wi
 
 ## Mechanisches Konzept
 
-Der Body sitzt im Skimmer und wird seitlich mit geeignetem neutralvernetzendem Silikon an den Rippen fixiert. Der originale Mittelsteg bleibt erhalten. Der lösbare Deckel trägt die Technik:
+Der Body sitzt im Skimmer und wird seitlich mit geeignetem neutralvernetzendem Silikon an den Rippen fixiert. Der originale Mittelsteg bleibt erhalten. Der Body ist absichtlich **leicht nach innen zum Skimmer hin abgeschrägt**, damit Wasser, das auf das Gehäuse gelangt, nach innen in den Skimmer zurücklaufen kann und sich nicht auf dem Body sammelt. Der lösbare Deckel trägt die Technik:
 
 - Batteriehalter und ESP auf der trockenen Innenseite;
 - A02YYUW außen in Richtung Wasser;
