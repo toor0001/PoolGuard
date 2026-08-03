@@ -8,40 +8,43 @@ substitutions:
   one_wire_pin: GPIO4
   battery_adc_pin: GPIO3
 
-  # One short local A02 check roughly every minute. WiFi stays off unless a
-  # state changes or the 30-minute status report is due.
+  # Normal low-power operation: one local motion check about once per minute.
   sleep_duration: 55s
   detection_burst_duration: 5s
   status_every_wakes: "30"
 
-  # Experimental motion thresholds. Tune these in the real skimmer.
+  # INITIAL MOTION CALIBRATION
+  # Set this to true temporarily and flash PoolGuard. The node then stays awake
+  # and online so the calibration buttons can be used from Home Assistant.
+  # Set it back to false and flash again when calibration is finished.
+  calibration_mode_on_boot: "false"
+  calibration_window_seconds: "5"
+  calibration_windows: "12"  # 12 x 5 s = about 60 seconds per profile
+
+  # Fallback thresholds used until a complete valid calibration exists.
   pump_motion_threshold_cm: "1.5"
   person_motion_threshold_cm: "3.0"
   pump_confirm_cycles: "2"
   person_on_confirm_cycles: "1"
   person_off_confirm_cycles: "2"
 
-  # Water-level calibration:
+  # WATER-LEVEL CALIBRATION
   # distance_empty_cm = A02-to-water distance at the LOWEST acceptable level.
   # distance_full_cm  = A02-to-water distance at the HIGHEST normal level.
-  # Measure both values with the finished PoolGuard installed in the skimmer.
+  # Measure both with the finished PoolGuard installed in the skimmer.
   distance_empty_cm: !secret poolguard_distance_empty_cm
   distance_full_cm: !secret poolguard_distance_full_cm
 
-  # Safety threshold for the circulation pump.
-  # Start with 20 %. After installation, determine the real minimum water level
-  # at which the skimmer still feeds the pump reliably and set this accordingly.
-  # Hysteresis prevents the warning from toggling around the threshold.
+  # Minimum safe water level for the circulation pump.
+  # Determine this on the real pool. 20 % is only a starting value.
   min_safe_water_level_percent: "20.0"
   low_water_hysteresis_percent: "3.0"
 
-  # Battery divider calibration. Enter the actual resistor values used.
+  # BATTERY CALIBRATION
+  # Enter the actual resistor values used in the voltage divider.
   battery_r_top: !secret poolguard_battery_r_top
   battery_r_bottom: !secret poolguard_battery_r_bottom
-
-  # Battery-level calibration for one Li-ion / 18650 cell.
-  # These are deliberately configurable because ADC/divider tolerances vary.
-  # Adjust after comparing the calculated level with a multimeter.
+  # Compare the calculated level with a multimeter and tune if necessary.
   battery_empty_v: "3.20"
   battery_full_v: "4.20"
 
@@ -69,9 +72,7 @@ esphome:
             poolguard_rtc.person_on_streak = 0;
             poolguard_rtc.person_off_streak = 0;
           }
-
           poolguard_rtc.wake_count++;
-          id(sample_count) = 0;
           id(sample_min_mm) = 100000;
           id(sample_max_mm) = 0;
           id(sample_sum_mm) = 0;
@@ -79,9 +80,22 @@ esphome:
           id(a02_frame).clear();
           id(report_needed) = false;
           id(status_report_due) = (poolguard_rtc.wake_count >= ${status_every_wakes});
-      - output.turn_on: a02_power
-      - delay: ${detection_burst_duration}
-      - script.execute: evaluate_cycle
+          id(calibration_active) = false;
+          id(calibration_target) = 0;
+      - if:
+          condition:
+            lambda: 'return ${calibration_mode_on_boot};'
+          then:
+            - wifi.enable:
+            - output.turn_on: a02_power
+            - text_sensor.template.publish:
+                id: calibration_status
+                state: "Ready - choose calibration profile"
+            - logger.log: "Calibration mode active; PoolGuard stays awake"
+          else:
+            - output.turn_on: a02_power
+            - delay: ${detection_burst_duration}
+            - script.execute: evaluate_cycle
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -129,10 +143,6 @@ one_wire:
     id: poolguard_onewire
 
 globals:
-  - id: sample_count
-    type: int
-    restore_value: no
-    initial_value: "0"
   - id: valid_frame_count
     type: int
     restore_value: no
@@ -161,6 +171,39 @@ globals:
     restore_value: no
     initial_value: "false"
 
+  # Calibration values are written only during commissioning, not every minute.
+  - id: calibration_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: calibration_target
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: calibration_samples
+    type: std::vector<float>
+    restore_value: no
+  - id: calibrated_quiet_cm
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+  - id: calibrated_pump_cm
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+  - id: calibrated_person_cm
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+  - id: learned_pump_threshold_cm
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+  - id: learned_person_threshold_cm
+    type: float
+    restore_value: yes
+    initial_value: "-1.0"
+
 sensor:
   - platform: dallas_temp
     one_wire_id: poolguard_onewire
@@ -170,8 +213,7 @@ sensor:
     resolution: 11
     update_interval: never
 
-  # Internal battery-voltage measurement. Home Assistant only receives the
-  # calculated Battery Level percentage below.
+  # Voltage remains internal; Home Assistant receives Battery Level only.
   - platform: adc
     pin: ${battery_adc_pin}
     id: battery_voltage_raw
@@ -208,8 +250,6 @@ sensor:
     state_class: measurement
     update_interval: never
 
-  # Main water-level value used in Home Assistant.
-  # 0 % corresponds to distance_empty_cm, 100 % to distance_full_cm.
   - platform: template
     id: water_level_percent
     name: "Water Level"
@@ -218,8 +258,7 @@ sensor:
     state_class: measurement
     update_interval: never
 
-  # Diagnostic value for tuning pump/person thresholds. It can be hidden later
-  # once real skimmer measurements have established reliable thresholds.
+  # Useful during tuning; can be hidden in HA later.
   - platform: template
     id: water_motion_cm
     name: "Water Surface Motion"
@@ -228,25 +267,65 @@ sensor:
     state_class: measurement
     update_interval: never
 
+  # Calibration diagnostics. Each profile is the median of multiple 5-second
+  # motion ranges so a single splash does not dominate the learned value.
+  - platform: template
+    id: quiet_motion_profile
+    name: "Calibration Quiet Motion"
+    unit_of_measurement: cm
+    accuracy_decimals: 2
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    id: pump_motion_profile
+    name: "Calibration Pump Motion"
+    unit_of_measurement: cm
+    accuracy_decimals: 2
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    id: person_motion_profile
+    name: "Calibration Person Motion"
+    unit_of_measurement: cm
+    accuracy_decimals: 2
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    id: active_pump_threshold
+    name: "Active Pump Motion Threshold"
+    unit_of_measurement: cm
+    accuracy_decimals: 2
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    id: active_person_threshold
+    name: "Active Person Motion Threshold"
+    unit_of_measurement: cm
+    accuracy_decimals: 2
+    entity_category: diagnostic
+    update_interval: never
+
   - platform: wifi_signal
     name: "WiFi Signal"
     id: wifi_rssi
     update_interval: 10s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: template
+    id: calibration_status
+    name: "Calibration Status"
+    entity_category: diagnostic
 
 binary_sensor:
   - platform: template
     id: pump_detected
     name: "Pump Detected"
     device_class: running
-
   - platform: template
     id: person_detected
     name: "Person Detected"
     device_class: occupancy
-
-  # Safety warning for Home Assistant. This is evaluated every one-minute A02
-  # cycle, not only during the 30-minute status report. A state change therefore
-  # wakes WiFi immediately so HA can react, e.g. switch the circulation pump off.
   - platform: template
     id: low_water_level
     name: "Low Water Level"
@@ -258,7 +337,159 @@ button:
     on_press:
       - script.execute: evaluate_cycle
 
+  # Guided commissioning. Run these in the listed order while the corresponding
+  # real pool condition is kept stable for about 60 seconds.
+  - platform: template
+    name: "Calibrate Quiet Water"
+    entity_category: config
+    on_press:
+      - lambda: 'id(calibration_target) = 1;'
+      - script.execute: run_motion_calibration
+  - platform: template
+    name: "Calibrate Pump"
+    entity_category: config
+    on_press:
+      - lambda: 'id(calibration_target) = 2;'
+      - script.execute: run_motion_calibration
+  - platform: template
+    name: "Calibrate Person"
+    entity_category: config
+    on_press:
+      - lambda: 'id(calibration_target) = 3;'
+      - script.execute: run_motion_calibration
+  - platform: template
+    name: "Reset Motion Calibration"
+    entity_category: config
+    on_press:
+      - lambda: |-
+          id(calibrated_quiet_cm) = -1.0f;
+          id(calibrated_pump_cm) = -1.0f;
+          id(calibrated_person_cm) = -1.0f;
+          id(learned_pump_threshold_cm) = -1.0f;
+          id(learned_person_threshold_cm) = -1.0f;
+          id(quiet_motion_profile).publish_state(NAN);
+          id(pump_motion_profile).publish_state(NAN);
+          id(person_motion_profile).publish_state(NAN);
+          id(active_pump_threshold).publish_state(${pump_motion_threshold_cm});
+          id(active_person_threshold).publish_state(${person_motion_threshold_cm});
+      - text_sensor.template.publish:
+          id: calibration_status
+          state: "Calibration reset - fallback thresholds active"
+  - platform: template
+    name: "Finish Calibration and Sleep"
+    entity_category: config
+    on_press:
+      - output.turn_off: a02_power
+      - text_sensor.template.publish:
+          id: calibration_status
+          state: "Calibration finished"
+      - delay: 1s
+      - wifi.disable:
+      - deep_sleep.enter:
+          id: poolguard_sleep
+          sleep_duration: ${sleep_duration}
+
 script:
+  # 12 x 5-second windows = about 60 seconds. The median range is stored.
+  - id: run_motion_calibration
+    mode: single
+    then:
+      - lambda: |-
+          if (id(calibration_active)) return;
+          id(calibration_active) = true;
+          id(calibration_samples).clear();
+      - output.turn_on: a02_power
+      - text_sensor.template.publish:
+          id: calibration_status
+          state: "Calibration running - keep pool condition unchanged"
+      - repeat:
+          count: ${calibration_windows}
+          then:
+            - lambda: |-
+                id(sample_min_mm) = 100000;
+                id(sample_max_mm) = 0;
+                id(sample_sum_mm) = 0;
+                id(valid_frame_count) = 0;
+                id(a02_frame).clear();
+            - delay: ${calibration_window_seconds}s
+            - lambda: |-
+                if (id(valid_frame_count) >= 5) {
+                  id(calibration_samples).push_back(
+                      (id(sample_max_mm) - id(sample_min_mm)) / 10.0f);
+                }
+      - output.turn_off: a02_power
+      - lambda: |-
+          auto &samples = id(calibration_samples);
+          if (samples.size() < 8) {
+            ESP_LOGW("poolguard", "Calibration failed: only %d valid windows",
+                     (int) samples.size());
+            id(calibration_active) = false;
+            return;
+          }
+
+          std::sort(samples.begin(), samples.end());
+          const size_t n = samples.size();
+          const float median = (n % 2)
+              ? samples[n / 2]
+              : 0.5f * (samples[n / 2 - 1] + samples[n / 2]);
+
+          if (id(calibration_target) == 1) {
+            id(calibrated_quiet_cm) = median;
+            id(quiet_motion_profile).publish_state(median);
+          } else if (id(calibration_target) == 2) {
+            id(calibrated_pump_cm) = median;
+            id(pump_motion_profile).publish_state(median);
+          } else if (id(calibration_target) == 3) {
+            id(calibrated_person_cm) = median;
+            id(person_motion_profile).publish_state(median);
+          }
+
+          if (id(calibrated_quiet_cm) >= 0.0f &&
+              id(calibrated_pump_cm) >= 0.0f &&
+              id(calibrated_person_cm) >= 0.0f) {
+            if (id(calibrated_quiet_cm) < id(calibrated_pump_cm) &&
+                id(calibrated_pump_cm) < id(calibrated_person_cm)) {
+              id(learned_pump_threshold_cm) =
+                  0.5f * (id(calibrated_quiet_cm) + id(calibrated_pump_cm));
+              id(learned_person_threshold_cm) =
+                  0.5f * (id(calibrated_pump_cm) + id(calibrated_person_cm));
+              id(active_pump_threshold).publish_state(id(learned_pump_threshold_cm));
+              id(active_person_threshold).publish_state(id(learned_person_threshold_cm));
+              ESP_LOGI("poolguard",
+                       "Calibration complete: quiet=%.2f pump=%.2f person=%.2f thresholds=%.2f/%.2f",
+                       id(calibrated_quiet_cm), id(calibrated_pump_cm),
+                       id(calibrated_person_cm), id(learned_pump_threshold_cm),
+                       id(learned_person_threshold_cm));
+            } else {
+              ESP_LOGW("poolguard", "Calibration profiles overlap/out of order; previous thresholds retained");
+            }
+          }
+          id(calibration_active) = false;
+      - if:
+          condition:
+            lambda: 'return id(calibration_samples).size() < 8;'
+          then:
+            - text_sensor.template.publish:
+                id: calibration_status
+                state: "Calibration failed - not enough valid A02 data"
+          else:
+            - if:
+                condition:
+                  lambda: |-
+                    return id(calibrated_quiet_cm) >= 0.0f &&
+                           id(calibrated_pump_cm) >= 0.0f &&
+                           id(calibrated_person_cm) >= 0.0f &&
+                           id(calibrated_quiet_cm) < id(calibrated_pump_cm) &&
+                           id(calibrated_pump_cm) < id(calibrated_person_cm);
+                then:
+                  - text_sensor.template.publish:
+                      id: calibration_status
+                      state: "Calibration complete - learned thresholds active"
+                else:
+                  - text_sensor.template.publish:
+                      id: calibration_status
+                      state: "Profile saved - calibrate remaining conditions"
+
   - id: evaluate_cycle
     mode: restart
     then:
@@ -266,13 +497,14 @@ script:
       - lambda: |-
           if (id(valid_frame_count) < 5) {
             ESP_LOGW("poolguard", "Not enough valid A02 frames: %d", id(valid_frame_count));
-            // Do not change pump/person/low-water state on an invalid burst.
             id(report_needed) = id(status_report_due);
             return;
           }
 
-          const float average_cm = (id(sample_sum_mm) / (float) id(valid_frame_count)) / 10.0f;
-          const float motion_cm = (id(sample_max_mm) - id(sample_min_mm)) / 10.0f;
+          const float average_cm =
+              (id(sample_sum_mm) / (float) id(valid_frame_count)) / 10.0f;
+          const float motion_cm =
+              (id(sample_max_mm) - id(sample_min_mm)) / 10.0f;
           const float empty_cm = ${distance_empty_cm};
           const float full_cm = ${distance_full_cm};
           float level = 100.0f * (empty_cm - average_cm) / (empty_cm - full_cm);
@@ -282,7 +514,6 @@ script:
           id(water_motion_cm).publish_state(motion_cm);
           id(water_level_percent).publish_state(level);
 
-          // Low-water safety state with hysteresis.
           const float low_limit = ${min_safe_water_level_percent};
           const float low_clear = low_limit + ${low_water_hysteresis_percent};
           if (!poolguard_rtc.low_water_state && level <= low_limit) {
@@ -292,9 +523,14 @@ script:
           }
           id(low_water_level).publish_state(poolguard_rtc.low_water_state != 0);
 
-          const bool raw_person = motion_cm >= ${person_motion_threshold_cm};
+          const float pump_threshold = id(learned_pump_threshold_cm) > 0.0f
+              ? id(learned_pump_threshold_cm) : ${pump_motion_threshold_cm};
+          const float person_threshold = id(learned_person_threshold_cm) > 0.0f
+              ? id(learned_person_threshold_cm) : ${person_motion_threshold_cm};
+          id(active_pump_threshold).publish_state(pump_threshold);
+          id(active_person_threshold).publish_state(person_threshold);
 
-          // Person state debounce.
+          const bool raw_person = motion_cm >= person_threshold;
           if (raw_person) {
             poolguard_rtc.person_off_streak = 0;
             if (!poolguard_rtc.person_state) {
@@ -319,9 +555,9 @@ script:
             }
           }
 
-          // Pump classification is updated only while no person is detected.
+          # Pump state is intentionally held while person-like motion is active.
           if (!poolguard_rtc.person_state) {
-            const bool raw_pump = motion_cm >= ${pump_motion_threshold_cm};
+            const bool raw_pump = motion_cm >= pump_threshold;
             if (raw_pump) {
               poolguard_rtc.pump_off_streak = 0;
               if (!poolguard_rtc.pump_state) {
@@ -356,13 +592,15 @@ script:
               poolguard_rtc.reported_person_state != poolguard_rtc.person_state;
           const bool low_water_changed =
               poolguard_rtc.reported_low_water_state != poolguard_rtc.low_water_state;
-          id(report_needed) = pump_changed || person_changed || low_water_changed || id(status_report_due);
+          id(report_needed) =
+              pump_changed || person_changed || low_water_changed || id(status_report_due);
 
           ESP_LOGI("poolguard",
-                   "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%% pump=%d person=%d low_water=%d report=%d",
+                   "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%% pump=%d person=%d low_water=%d report=%d thresholds=%.2f/%.2f",
                    id(valid_frame_count), average_cm, motion_cm, level,
                    poolguard_rtc.pump_state, poolguard_rtc.person_state,
-                   poolguard_rtc.low_water_state, id(report_needed));
+                   poolguard_rtc.low_water_state, id(report_needed),
+                   pump_threshold, person_threshold);
       - if:
           condition:
             lambda: 'return id(status_report_due);'
@@ -390,9 +628,7 @@ script:
                       poolguard_rtc.reported_pump_state = poolguard_rtc.pump_state;
                       poolguard_rtc.reported_person_state = poolguard_rtc.person_state;
                       poolguard_rtc.reported_low_water_state = poolguard_rtc.low_water_state;
-                      if (id(status_report_due)) {
-                        poolguard_rtc.wake_count = 0;
-                      }
+                      if (id(status_report_due)) poolguard_rtc.wake_count = 0;
                       ESP_LOGI("poolguard", "State/status report delivered to Home Assistant");
                 else:
                   - logger.log:
@@ -412,16 +648,13 @@ interval:
           while (id(a02_uart).available()) {
             uint8_t byte;
             if (!id(a02_uart).read_byte(&byte)) break;
-
             auto &frame = id(a02_frame);
             if (frame.empty()) {
               if (byte == 0xFF) frame.push_back(byte);
               continue;
             }
-
             frame.push_back(byte);
             if (frame.size() < 4) continue;
-
             const uint8_t checksum = (frame[0] + frame[1] + frame[2]) & 0xFF;
             if (checksum == frame[3]) {
               const int distance_mm = (frame[1] << 8) | frame[2];
@@ -438,31 +671,22 @@ interval:
 deep_sleep:
   id: poolguard_sleep
 
-# Behaviour:
+# NORMAL OPERATION
 # - Wake roughly once per minute.
-# - Power A02 only for a short local measurement burst.
-# - Check pump, person and low-water state locally every minute.
-# - Keep WiFi disabled during ordinary checks.
-# - Report immediately when Pump/Person/Low Water state changes.
+# - Power A02 only for a short local burst.
+# - Check pump, person and low-water state locally every wake.
+# - Keep WiFi off unless a confirmed state changes or the 30-minute report is due.
 # - Report Water Level, Water Temperature and Battery Level about every 30 wakes.
-# - If WiFi/API delivery fails, the last-reported RTC state is not updated, so
-#   the transition is retried on the next wake.
 #
-# Calibration checklist after installation:
-# 1. Measure A02 distance at the lowest acceptable water level -> distance_empty_cm.
-# 2. Measure A02 distance at the highest normal water level -> distance_full_cm.
-# 3. Set min_safe_water_level_percent to a level that still guarantees reliable
-#    skimmer flow; test this physically before using it for pump protection.
-# 4. Compare battery ADC calculation against a multimeter and adjust divider
-#    resistor values / battery_empty_v / battery_full_v if necessary.
-# 5. Record Water Surface Motion with pump off, pump on and swimmers present,
-#    then tune pump_motion_threshold_cm and person_motion_threshold_cm.
+# MOTION CALIBRATION
+# 1. Temporarily set calibration_mode_on_boot to true and flash the node.
+# 2. In Home Assistant run Calibrate Quiet Water with pump OFF and nobody in pool.
+# 3. Run Calibrate Pump with pump ON and nobody in pool.
+# 4. Run Calibrate Person while normal bathing/movement is taking place.
+# 5. Each phase measures ~60 s (12 x 5 s windows) and stores the median motion.
+# 6. If quiet < pump < person, automatic thresholds are placed halfway between
+#    quiet/pump and pump/person. Otherwise the previous/fallback values stay active.
+# 7. Set calibration_mode_on_boot back to false and flash again for battery mode.
 #
-# Safety:
-# - Low Water Level is intended as an automation input, not as the only hardware
-#   protection against dry running. Home Assistant can use it to switch the pump
-#   off and prevent restart until the water level has recovered.
-# - During confirmed person motion, pump state is held at its previous value;
-#   one A02 cannot reliably separate simultaneous swimmer and pump motion.
-# - RTC state survives deep sleep without per-minute flash writes, but resets
-#   after a complete power loss. The first wake after power-up sends a report.
+# Calibration values are intentionally stored in flash because calibration is rare;
+# the one-minute detection state remains in RTC memory to avoid frequent flash writes.
