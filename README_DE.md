@@ -28,10 +28,10 @@ Die folgende Liste wird nach und nach um Bezugsquellen ergänzt:
 |---|---|---|
 | Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | [Amazon](https://link.amazon/B0iQQg2zF) |
 | USB-C Breakout-Kabel | Stromversorgung / Anschluss | [Amazon](https://link.amazon/B0eO8jr4N) |
-| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | – |
+| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | [Amazon](https://link.amazon/B0dWRfbC4) |
 | Wasserdichter DS18B20 | Wassertemperatur | – |
 | Geschützte 18650 Li-Ion-Zelle | Stromversorgung | – |
-| 18650-Batteriehalter | Aufnahme des Akkus | – |
+| 18650-Batteriehalter | Aufnahme des Akkus | [Amazon](https://link.amazon/B0hraa6X7) |
 | MOSFET / Load-Switch | Abschalten des A02YYUW im Deep Sleep | – |
 | Externe 2,4-GHz-WLAN-Antenne | Verbesserung der WLAN-Verbindung | – |
 
