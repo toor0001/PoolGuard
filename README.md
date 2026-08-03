@@ -18,7 +18,7 @@ PoolGuard data can be used to build automations such as:
 - disabling the circulation pump when the water level is too low, helping to prevent dry running;
 - sending a warning when the pool level is too high or too low;
 - operating a UV-C lamp only while active water circulation is actually detected;
-- **person detection in the pool:** if the water-surface movement is significantly stronger and more irregular than the pattern caused by the circulation pump, PoolGuard can infer that someone is probably swimming or bathing.
+- person detection in the pool
 
 > **Project status:** prototype / work in progress. The mechanical fit template is currently being tested. Do not drill, cut or permanently glue the original skimmer lid before checking the current CAD notes.
 
