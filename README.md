@@ -130,3 +130,7 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 ## License
 
 Software and documentation are released under the MIT License. CAD files are currently prototype files and may receive a separate hardware license before the first stable release.
+
+## Project creation
+
+This project was developed with support from ChatGPT and Codex.

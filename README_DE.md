@@ -130,3 +130,7 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 ## Lizenz
 
 Software und Dokumentation stehen unter der MIT-Lizenz. Die CAD-Dateien sind aktuell noch Prototypen; vor dem ersten stabilen Release kann dafür eine eigene Hardware-Lizenz ergänzt werden.
+
+## Projekterstellung
+
+Dieses Projekt wurde mit Unterstützung von ChatGPT und Codex entwickelt.
