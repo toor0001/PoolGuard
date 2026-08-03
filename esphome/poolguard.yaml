@@ -15,18 +15,35 @@ substitutions:
   status_every_wakes: "30"
 
   # Experimental motion thresholds. Tune these in the real skimmer.
-  # A strong person-like burst temporarily freezes pump classification because
-  # the A02 alone cannot reliably separate pump motion from a swimmer at once.
   pump_motion_threshold_cm: "1.5"
   person_motion_threshold_cm: "3.0"
   pump_confirm_cycles: "2"
   person_on_confirm_cycles: "1"
   person_off_confirm_cycles: "2"
 
+  # Water-level calibration:
+  # distance_empty_cm = A02-to-water distance at the LOWEST acceptable level.
+  # distance_full_cm  = A02-to-water distance at the HIGHEST normal level.
+  # Measure both values with the finished PoolGuard installed in the skimmer.
   distance_empty_cm: !secret poolguard_distance_empty_cm
   distance_full_cm: !secret poolguard_distance_full_cm
+
+  # Safety threshold for the circulation pump.
+  # Start with 20 %. After installation, determine the real minimum water level
+  # at which the skimmer still feeds the pump reliably and set this accordingly.
+  # Hysteresis prevents the warning from toggling around the threshold.
+  min_safe_water_level_percent: "20.0"
+  low_water_hysteresis_percent: "3.0"
+
+  # Battery divider calibration. Enter the actual resistor values used.
   battery_r_top: !secret poolguard_battery_r_top
   battery_r_bottom: !secret poolguard_battery_r_bottom
+
+  # Battery-level calibration for one Li-ion / 18650 cell.
+  # These are deliberately configurable because ADC/divider tolerances vary.
+  # Adjust after comparing the calculated level with a multimeter.
+  battery_empty_v: "3.20"
+  battery_full_v: "4.20"
 
 esphome:
   name: ${device_name}
@@ -43,8 +60,10 @@ esphome:
             poolguard_rtc.wake_count = 0;
             poolguard_rtc.pump_state = 0;
             poolguard_rtc.person_state = 0;
+            poolguard_rtc.low_water_state = 0;
             poolguard_rtc.reported_pump_state = -1;
             poolguard_rtc.reported_person_state = -1;
+            poolguard_rtc.reported_low_water_state = -1;
             poolguard_rtc.pump_on_streak = 0;
             poolguard_rtc.pump_off_streak = 0;
             poolguard_rtc.person_on_streak = 0;
@@ -151,19 +170,34 @@ sensor:
     resolution: 11
     update_interval: never
 
+  # Internal battery-voltage measurement. Home Assistant only receives the
+  # calculated Battery Level percentage below.
   - platform: adc
     pin: ${battery_adc_pin}
-    id: battery_adc
-    name: "Battery Voltage"
+    id: battery_voltage_raw
+    internal: true
     attenuation: 12db
     update_interval: never
     filters:
       - multiply: !lambda |-
           return (${battery_r_top} + ${battery_r_bottom}) / ${battery_r_bottom};
-    unit_of_measurement: V
-    accuracy_decimals: 2
-    device_class: voltage
+    on_value:
+      then:
+        - lambda: |-
+            const float empty_v = ${battery_empty_v};
+            const float full_v = ${battery_full_v};
+            float pct = 100.0f * (x - empty_v) / (full_v - empty_v);
+            pct = std::max(0.0f, std::min(100.0f, pct));
+            id(battery_level).publish_state(pct);
+
+  - platform: template
+    id: battery_level
+    name: "Battery Level"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: battery
     state_class: measurement
+    update_interval: never
 
   - platform: template
     id: distance_cm
@@ -174,6 +208,8 @@ sensor:
     state_class: measurement
     update_interval: never
 
+  # Main water-level value used in Home Assistant.
+  # 0 % corresponds to distance_empty_cm, 100 % to distance_full_cm.
   - platform: template
     id: water_level_percent
     name: "Water Level"
@@ -182,6 +218,8 @@ sensor:
     state_class: measurement
     update_interval: never
 
+  # Diagnostic value for tuning pump/person thresholds. It can be hidden later
+  # once real skimmer measurements have established reliable thresholds.
   - platform: template
     id: water_motion_cm
     name: "Water Surface Motion"
@@ -206,6 +244,14 @@ binary_sensor:
     name: "Person Detected"
     device_class: occupancy
 
+  # Safety warning for Home Assistant. This is evaluated every one-minute A02
+  # cycle, not only during the 30-minute status report. A state change therefore
+  # wakes WiFi immediately so HA can react, e.g. switch the circulation pump off.
+  - platform: template
+    id: low_water_level
+    name: "Low Water Level"
+    device_class: problem
+
 button:
   - platform: template
     name: "Measure Now"
@@ -220,7 +266,7 @@ script:
       - lambda: |-
           if (id(valid_frame_count) < 5) {
             ESP_LOGW("poolguard", "Not enough valid A02 frames: %d", id(valid_frame_count));
-            // Do not change pump/person state on an invalid burst. Retry next wake.
+            // Do not change pump/person/low-water state on an invalid burst.
             id(report_needed) = id(status_report_due);
             return;
           }
@@ -235,6 +281,16 @@ script:
           id(distance_cm).publish_state(average_cm);
           id(water_motion_cm).publish_state(motion_cm);
           id(water_level_percent).publish_state(level);
+
+          // Low-water safety state with hysteresis.
+          const float low_limit = ${min_safe_water_level_percent};
+          const float low_clear = low_limit + ${low_water_hysteresis_percent};
+          if (!poolguard_rtc.low_water_state && level <= low_limit) {
+            poolguard_rtc.low_water_state = 1;
+          } else if (poolguard_rtc.low_water_state && level >= low_clear) {
+            poolguard_rtc.low_water_state = 0;
+          }
+          id(low_water_level).publish_state(poolguard_rtc.low_water_state != 0);
 
           const bool raw_person = motion_cm >= ${person_motion_threshold_cm};
 
@@ -264,7 +320,6 @@ script:
           }
 
           // Pump classification is updated only while no person is detected.
-          // Strong swimmer-induced motion would otherwise look like an active pump.
           if (!poolguard_rtc.person_state) {
             const bool raw_pump = motion_cm >= ${pump_motion_threshold_cm};
             if (raw_pump) {
@@ -299,19 +354,21 @@ script:
               poolguard_rtc.reported_pump_state != poolguard_rtc.pump_state;
           const bool person_changed =
               poolguard_rtc.reported_person_state != poolguard_rtc.person_state;
-          id(report_needed) = pump_changed || person_changed || id(status_report_due);
+          const bool low_water_changed =
+              poolguard_rtc.reported_low_water_state != poolguard_rtc.low_water_state;
+          id(report_needed) = pump_changed || person_changed || low_water_changed || id(status_report_due);
 
           ESP_LOGI("poolguard",
-                   "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%% pump=%d person=%d report=%d",
+                   "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%% pump=%d person=%d low_water=%d report=%d",
                    id(valid_frame_count), average_cm, motion_cm, level,
                    poolguard_rtc.pump_state, poolguard_rtc.person_state,
-                   id(report_needed));
+                   poolguard_rtc.low_water_state, id(report_needed));
       - if:
           condition:
             lambda: 'return id(status_report_due);'
           then:
             - component.update: water_temperature
-            - component.update: battery_adc
+            - component.update: battery_voltage_raw
             - delay: 800ms
       - if:
           condition:
@@ -332,6 +389,7 @@ script:
                   - lambda: |-
                       poolguard_rtc.reported_pump_state = poolguard_rtc.pump_state;
                       poolguard_rtc.reported_person_state = poolguard_rtc.person_state;
+                      poolguard_rtc.reported_low_water_state = poolguard_rtc.low_water_state;
                       if (id(status_report_due)) {
                         poolguard_rtc.wake_count = 0;
                       }
@@ -383,19 +441,28 @@ deep_sleep:
 # Behaviour:
 # - Wake roughly once per minute.
 # - Power A02 only for a short local measurement burst.
-# - Keep WiFi disabled during ordinary one-minute checks.
-# - Report immediately only when confirmed Pump/Person state changes.
-# - Report water level, temperature and battery approximately every 30 wakes.
+# - Check pump, person and low-water state locally every minute.
+# - Keep WiFi disabled during ordinary checks.
+# - Report immediately when Pump/Person/Low Water state changes.
+# - Report Water Level, Water Temperature and Battery Level about every 30 wakes.
 # - If WiFi/API delivery fails, the last-reported RTC state is not updated, so
 #   the transition is retried on the next wake.
 #
-# Notes:
-# - Pump/person thresholds are experimental and must be calibrated in the real
-#   skimmer. The A02 measures water motion, not people directly.
+# Calibration checklist after installation:
+# 1. Measure A02 distance at the lowest acceptable water level -> distance_empty_cm.
+# 2. Measure A02 distance at the highest normal water level -> distance_full_cm.
+# 3. Set min_safe_water_level_percent to a level that still guarantees reliable
+#    skimmer flow; test this physically before using it for pump protection.
+# 4. Compare battery ADC calculation against a multimeter and adjust divider
+#    resistor values / battery_empty_v / battery_full_v if necessary.
+# 5. Record Water Surface Motion with pump off, pump on and swimmers present,
+#    then tune pump_motion_threshold_cm and person_motion_threshold_cm.
+#
+# Safety:
+# - Low Water Level is intended as an automation input, not as the only hardware
+#   protection against dry running. Home Assistant can use it to switch the pump
+#   off and prevent restart until the water level has recovered.
 # - During confirmed person motion, pump state is held at its previous value;
 #   one A02 cannot reliably separate simultaneous swimmer and pump motion.
 # - RTC state survives deep sleep without per-minute flash writes, but resets
-#   after a complete power loss. The first wake after power-up therefore sends
-#   a complete state report.
-# - For OTA updates, temporarily set wifi.enable_on_boot to true and prevent or
-#   comment out deep sleep while flashing.
+#   after a complete power loss. The first wake after power-up sends a report.
