@@ -18,7 +18,7 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 - die Umwälzpumpe bei zu niedrigem Füllstand deaktivieren, damit sie nicht trockenläuft;
 - bei zu hohem oder zu niedrigem Wasserstand eine Warnung senden;
 - eine UV-C-Lampe ausschließlich dann einschalten, wenn tatsächlich eine Wasserumwälzung erkannt wird;
-- **Personenerkennung im Pool:** Sind die Bewegungen der Wasseroberfläche deutlich stärker und unregelmäßiger als bei laufender Umwälzpumpe, kann daraus abgeleitet werden, dass vermutlich gerade jemand badet.
+- Personenerkennung im Pool
 
 > **Projektstatus:** Prototyp / in Entwicklung. Aktuell wird zuerst die Passschablone für die Fächer 3 und 4 getestet. Den Originaldeckel noch nicht bohren, schneiden oder dauerhaft verkleben, bevor die aktuelle CAD-Version geprüft wurde.
 
