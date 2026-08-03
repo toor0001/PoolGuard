@@ -29,7 +29,7 @@ The following list will be expanded with purchase links over time:
 | Seeed Studio XIAO ESP32-C3 | Microcontroller / ESPHome | [Amazon](https://link.amazon/B0iQQg2zF) |
 | USB-C breakout cable | Power / connection | [Amazon](https://link.amazon/B0eO8jr4N) |
 | DFRobot A02YYUW | Distance measurement to the water surface | [Amazon](https://link.amazon/B0dWRfbC4) |
-| Waterproof DS18B20 | Pool-water temperature | – |
+| Waterproof DS18B20 | Pool-water temperature | [Amazon](https://link.amazon/B08FcJbtj) |
 | Protected 18650 Li-ion cell | Power supply | – |
 | 18650 battery holder | Battery mounting | [Amazon](https://link.amazon/B0hraa6X7) |
 | MOSFET / load switch | Powering down the A02YYUW during deep sleep | – |
