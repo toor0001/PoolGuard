@@ -4,9 +4,22 @@
 
 [Deutsch](README_DE.md) · English
 
-PoolGuard is a DIY sensor module for an **AstralPool 17.5 L skimmer lid**. It measures the distance to the water surface, the pool-water temperature and the battery voltage. A series of rapid distance measurements can also be used to estimate whether the circulation pump is running from the movement of the water surface.
+PoolGuard is a DIY sensor module designed to fit precisely into the lid of an **AstralPool 17.5 L skimmer**. It can be installed without drilling or cutting the original lid and secured with a suitable adhesive or neutral-curing silicone.
 
-> **Project status:** prototype / work in progress. The mechanical fit template is currently being tested. Do not drill, cut or glue the original skimmer lid before checking the current CAD notes.
+The module measures the distance to the water surface and therefore the current pool level. It also monitors the pool-water temperature. By analysing movement and short-term fluctuations at the water surface, PoolGuard can additionally estimate whether the circulation pump is currently running.
+
+The electronics are designed for extremely low power consumption. By using deep sleep and fully powering down the sensors between measurements, the goal is to run PoolGuard for an entire pool season on a single battery charge.
+
+## Home Assistant possibilities
+
+PoolGuard data can be used to build automations such as:
+
+- switching a pool heat pump on or off based on the measured water temperature;
+- disabling the circulation pump when the water level is too low, helping to prevent dry running;
+- sending a warning when the pool level is too high or too low;
+- operating a UV-C lamp only while active water circulation is actually detected.
+
+> **Project status:** prototype / work in progress. The mechanical fit template is currently being tested. Do not drill, cut or permanently glue the original skimmer lid before checking the current CAD notes.
 
 > **Name and affiliation:** PoolGuard is an independent open-source DIY project. It is not affiliated with, endorsed by or connected to any company, brand or commercial product using the PoolGuard name.
 
@@ -15,12 +28,12 @@ PoolGuard is a DIY sensor module for an **AstralPool 17.5 L skimmer lid**. It me
 - Water-level monitoring with a waterproof **DFRobot A02YYUW** ultrasonic sensor
 - Water temperature with a waterproof **DS18B20**
 - **Seeed Studio XIAO ESP32-C3** with external 2.4 GHz antenna
-- One 18650 Li-ion cell
-- Deep sleep for long battery life
+- One protected 18650 Li-ion cell
+- Deep sleep for very long battery life
 - Battery-voltage monitoring through a resistor divider
 - Experimental pump detection from short-term water-surface movement
 - Local integration with ESPHome and Home Assistant
-- 3D-printed insert designed only for the pool-skimmer project
+- Custom 3D-printed insert designed for the AstralPool skimmer lid
 
 ## Repository layout
 
@@ -55,7 +68,7 @@ The housing body sits in skimmer compartments 3 and 4 and is bonded to the side 
 - Do not short, crush or reverse the cell.
 - Keep electronics sealed from condensation and splash water.
 - Use a suitable MOSFET or load switch to fully power down the A02YYUW during deep sleep.
-- Treat pump detection as an indication only, not as a safety interlock.
+- Treat pump detection as an indication only, never as the sole safety interlock.
 
 ## Support
 
