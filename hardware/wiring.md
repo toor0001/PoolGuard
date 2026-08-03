@@ -7,7 +7,7 @@
 | Function | ESP32-C3 GPIO | Notes |
 |---|---:|---|
 | A02 UART RX | GPIO20 | Sensor TX connects to ESP RX |
-| A02 power control | GPIO2 | Drives a proper high-side switch; do not power the A02 directly from the GPIO |
+| A02 power control | GPIO5 | Drives the Pololu 2810 ON pin; do not power the A02 directly from the GPIO |
 | DS18B20 data | GPIO4 | Add 4.7 kΩ pull-up to 3.3 V |
 | Battery ADC | GPIO3 | Connect only through the resistor divider |
 
@@ -20,7 +20,7 @@ Protected 18650
      │
      ├──────────────> XIAO battery/power input
      │
-     ├─ high-side switch ─────────> A02YYUW VCC
+     ├─ Pololu 2810 ─────────────> A02YYUW VCC
      │                              A02 TX ─────> GPIO20
      │                              A02 GND ────> GND
      │
@@ -40,7 +40,7 @@ GND   ────────────────────────�
 
 ### A02 power switching
 
-The distance sensor must be fully switched off during deep sleep. A GPIO is only a control signal. Use a suitable high-side load switch or P-channel MOSFET circuit so that the sensor supply is disconnected without back-powering through its UART line.
+The distance sensor must be fully switched off during deep sleep. GPIO5 is only a control signal for the Pololu 2810 ON input; do not power the sensor directly from the GPIO. Confirm that the sensor supply is disconnected without back-powering through its UART line.
 
 A series resistor on the A02 TX line may be useful, and the UART line should not be allowed to feed the powered-down sensor. The final switching circuit is still to be validated on the bench.
 

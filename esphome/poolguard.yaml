@@ -4,7 +4,7 @@ substitutions:
 
   # Verify these GPIO assignments against the final wiring before flashing.
   a02_rx_pin: GPIO20
-  a02_power_pin: GPIO2
+  a02_power_pin: GPIO5
   one_wire_pin: GPIO4
   battery_adc_pin: GPIO3
 
@@ -67,9 +67,7 @@ esphome:
             poolguard_rtc.person_off_streak = 0;
           }
           poolguard_rtc.wake_count++;
-          id(sample_min_mm) = 100000;
-          id(sample_max_mm) = 0;
-          id(sample_sum_mm) = 0;
+          id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
           id(report_needed) = false;
@@ -103,7 +101,7 @@ logger:
 # Calibration writes are rare, so save learned values immediately rather than
 # risking them being lost if power is removed straight afterwards.
 preferences:
-  flash_write_interval: 0s
+  flash_write_interval: 1s
 
 api:
   id: poolguard_api
@@ -123,7 +121,6 @@ wifi:
   power_save_mode: HIGH
   enable_on_boot: false
   reboot_timeout: 0s
-  ap_timeout: 0s
 
 output:
   - platform: gpio
@@ -146,18 +143,9 @@ globals:
     type: int
     restore_value: no
     initial_value: "0"
-  - id: sample_min_mm
-    type: int
+  - id: sample_distances_mm
+    type: std::vector<int>
     restore_value: no
-    initial_value: "100000"
-  - id: sample_max_mm
-    type: int
-    restore_value: no
-    initial_value: "0"
-  - id: sample_sum_mm
-    type: long
-    restore_value: no
-    initial_value: "0"
   - id: a02_frame
     type: std::vector<uint8_t>
     restore_value: no
@@ -270,6 +258,25 @@ sensor:
             const float empty_v = ${battery_empty_v};
             const float full_v = ${battery_full_v};
             float pct = 100.0f * (x - empty_v) / (full_v - empty_v);
+            if (x > empty_v && x < full_v) {
+              // Approximate rested single-cell Li-ion SOC. Still an estimate
+              // under load, but closer to the flat discharge curve than a
+              // direct linear voltage-to-percent mapping.
+              static const float curve[][2] = {
+                  {3.20f, 0.0f},  {3.30f, 5.0f},  {3.50f, 15.0f},
+                  {3.65f, 35.0f}, {3.75f, 55.0f}, {3.85f, 70.0f},
+                  {4.00f, 85.0f}, {4.10f, 95.0f}, {4.20f, 100.0f}};
+              for (size_t i = 1; i < sizeof(curve) / sizeof(curve[0]); i++) {
+                if (x <= curve[i][0]) {
+                  const float v0 = curve[i - 1][0];
+                  const float p0 = curve[i - 1][1];
+                  const float v1 = curve[i][0];
+                  const float p1 = curve[i][1];
+                  pct = p0 + (x - v0) * (p1 - p0) / (v1 - v0);
+                  break;
+                }
+              }
+            }
             pct = std::max(0.0f, std::min(100.0f, pct));
             id(battery_level).publish_state(pct);
 
@@ -400,9 +407,7 @@ button:
     on_press:
       - output.turn_on: a02_power
       - lambda: |-
-          id(sample_min_mm) = 100000;
-          id(sample_max_mm) = 0;
-          id(sample_sum_mm) = 0;
+          id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
       - text_sensor.template.publish:
@@ -411,8 +416,12 @@ button:
       - delay: 5s
       - lambda: |-
           if (id(valid_frame_count) >= 5) {
-            const float distance =
-                (id(sample_sum_mm) / (float) id(valid_frame_count)) / 10.0f;
+            auto distances = id(sample_distances_mm);
+            std::sort(distances.begin(), distances.end());
+            const size_t n = distances.size();
+            const float distance = ((n % 2)
+                ? distances[n / 2]
+                : 0.5f * (distances[n / 2 - 1] + distances[n / 2])) / 10.0f;
             id(water_reference_distance_cm) = distance;
             id(water_reference_depth_cm) = id(reference_water_depth_input).state;
             ESP_LOGI("poolguard", "Water reference saved: A02=%.2f cm, depth=%.1f cm",
@@ -499,16 +508,19 @@ script:
           count: ${calibration_windows}
           then:
             - lambda: |-
-                id(sample_min_mm) = 100000;
-                id(sample_max_mm) = 0;
-                id(sample_sum_mm) = 0;
+                id(sample_distances_mm).clear();
                 id(valid_frame_count) = 0;
                 id(a02_frame).clear();
             - delay: ${calibration_window_seconds}s
             - lambda: |-
                 if (id(valid_frame_count) >= 5) {
+                  auto distances = id(sample_distances_mm);
+                  std::sort(distances.begin(), distances.end());
+                  const size_t n = distances.size();
+                  const size_t low_index = (n - 1) / 10;
+                  const size_t high_index = ((n - 1) * 9) / 10;
                   id(calibration_samples).push_back(
-                      (id(sample_max_mm) - id(sample_min_mm)) / 10.0f);
+                      (distances[high_index] - distances[low_index]) / 10.0f);
                 }
       - output.turn_off: a02_power
       - lambda: |-
@@ -588,11 +600,17 @@ script:
             return;
           }
 
-          const float average_cm =
-              (id(sample_sum_mm) / (float) id(valid_frame_count)) / 10.0f;
+          auto distances = id(sample_distances_mm);
+          std::sort(distances.begin(), distances.end());
+          const size_t n = distances.size();
+          const size_t low_index = (n - 1) / 10;
+          const size_t high_index = ((n - 1) * 9) / 10;
+          const float distance_cm_value = ((n % 2)
+              ? distances[n / 2]
+              : 0.5f * (distances[n / 2 - 1] + distances[n / 2])) / 10.0f;
           const float motion_cm =
-              (id(sample_max_mm) - id(sample_min_mm)) / 10.0f;
-          id(distance_cm).publish_state(average_cm);
+              (distances[high_index] - distances[low_index]) / 10.0f;
+          id(distance_cm).publish_state(distance_cm_value);
           id(water_motion_cm).publish_state(motion_cm);
 
           float depth_cm = NAN;
@@ -601,7 +619,7 @@ script:
           if (id(water_reference_distance_cm) > 0.0f &&
               id(water_reference_depth_cm) >= 0.0f) {
             depth_cm = id(water_reference_depth_cm) -
-                       (average_cm - id(water_reference_distance_cm));
+                       (distance_cm_value - id(water_reference_distance_cm));
             depth_cm = std::max(0.0f, std::min((float) ${pool_max_depth_cm}, depth_cm));
             level_pct = 100.0f * depth_cm / (float) ${pool_max_depth_cm};
             const float radius_m = ((float) ${pool_diameter_m}) * 0.5f;
@@ -701,7 +719,7 @@ script:
 
           ESP_LOGI("poolguard",
                    "frames=%d distance=%.1fcm motion=%.1fcm depth=%.1fcm level=%.0f%% volume=%.2fm3 pump=%d person=%d low_water=%d report=%d",
-                   id(valid_frame_count), average_cm, motion_cm, depth_cm, level_pct,
+                   id(valid_frame_count), distance_cm_value, motion_cm, depth_cm, level_pct,
                    volume_m3, poolguard_rtc.pump_state, poolguard_rtc.person_state,
                    poolguard_rtc.low_water_state, id(report_needed));
       - if:
@@ -759,9 +777,7 @@ interval:
             if (checksum == frame[3]) {
               const int distance_mm = (frame[1] << 8) | frame[2];
               if (distance_mm >= 30 && distance_mm <= 4500) {
-                id(sample_min_mm) = std::min(id(sample_min_mm), distance_mm);
-                id(sample_max_mm) = std::max(id(sample_max_mm), distance_mm);
-                id(sample_sum_mm) += distance_mm;
+                id(sample_distances_mm).push_back(distance_mm);
                 id(valid_frame_count)++;
               }
             }
@@ -787,5 +803,6 @@ deep_sleep:
 #
 # MOTION CALIBRATION
 # In calibration mode run Quiet Water, Pump and Person for ~60 s each. Learned
-# thresholds are stored persistently. Set calibration_mode_on_boot back to false
-# and flash again when commissioning is complete.
+# thresholds are based on a trimmed sample span and stored persistently. Set
+# calibration_mode_on_boot back to false and flash again when commissioning is
+# complete.

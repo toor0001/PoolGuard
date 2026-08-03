@@ -43,15 +43,15 @@ The A02YYUW is powered through a **Pololu Mini MOSFET Slide Switch with Reverse 
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
 XIAO GND    -------- GND   Pololu 2810
-GPIO2       -------- ON    Pololu 2810
+GPIO5       -------- ON    Pololu 2810
 Pololu VOUT -------- VCC   A02YYUW
 A02YYUW GND -------- GND
 A02YYUW TX  -------- GPIO20
 A02YYUW RX  -------- leave unconnected
 ```
 
-- **GPIO2 HIGH:** A02YYUW powered on
-- **GPIO2 LOW:** A02YYUW powered off
+- **GPIO5 HIGH:** A02YYUW powered on
+- **GPIO5 LOW:** A02YYUW powered off
 - during deep sleep the A02YYUW remains unpowered
 
 ## Measurement and low-power operation
@@ -86,7 +86,7 @@ In calibration mode run these three buttons in order:
 2. **Calibrate Pump** – circulation pump running, nobody in the pool.
 3. **Calibrate Person** – normal swimming/bathing movement in the pool.
 
-Each phase measures about 60 seconds and stores the median motion profile. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically calculates the pump and person/activity thresholds. If they overlap, the previous or fallback thresholds remain active.
+Each phase measures about 60 seconds and stores the median motion profile. Motion is evaluated from a trimmed sample span so single outliers or splashes have less influence than a raw min/max range. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically calculates the pump and person/activity thresholds. If they overlap, the previous or fallback thresholds remain active.
 
 After water-level and motion calibration, set `calibration_mode_on_boot` back to `false` and flash PoolGuard again for normal battery-saving operation.
 

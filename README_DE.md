@@ -43,15 +43,15 @@ Für den A02YYUW wird der **Pololu Mini MOSFET Slide Switch with Reverse Voltage
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
 XIAO GND    -------- GND   Pololu 2810
-GPIO2       -------- ON    Pololu 2810
+GPIO5       -------- ON    Pololu 2810
 Pololu VOUT -------- VCC   A02YYUW
 A02YYUW GND -------- GND
 A02YYUW TX  -------- GPIO20
 A02YYUW RX  -------- nicht anschließen
 ```
 
-- **GPIO2 HIGH:** A02YYUW eingeschaltet
-- **GPIO2 LOW:** A02YYUW ausgeschaltet
+- **GPIO5 HIGH:** A02YYUW eingeschaltet
+- **GPIO5 LOW:** A02YYUW ausgeschaltet
 - im Deep Sleep bleibt der A02YYUW stromlos
 
 ## Messzyklus und Stromsparbetrieb
@@ -86,7 +86,7 @@ Im Kalibriermodus werden diese drei Buttons nacheinander ausgeführt:
 2. **Calibrate Pump** – Umwälzpumpe an, niemand im Pool.
 3. **Calibrate Person** – normale Bade-/Schwimmbewegung im Pool.
 
-Jede Phase misst ungefähr 60 Sekunden und speichert den Median der Wasserbewegung. Liegen die Profile eindeutig in der Reihenfolge `ruhig < Pumpe < Person`, berechnet PoolGuard automatisch die Grenzwerte. Überlappen sich die Profile, bleiben die bisherigen beziehungsweise Fallback-Grenzwerte aktiv.
+Jede Phase misst ungefähr 60 Sekunden und speichert den Median der Wasserbewegung. Die Bewegung wird aus einer getrimmten Messwert-Spanne berechnet, damit einzelne Ausreißer oder Spritzer weniger Einfluss haben als bei einem einfachen Min/Max-Wert. Liegen die Profile eindeutig in der Reihenfolge `ruhig < Pumpe < Person`, berechnet PoolGuard automatisch die Grenzwerte. Überlappen sich die Profile, bleiben die bisherigen beziehungsweise Fallback-Grenzwerte aktiv.
 
 Nach Wasserstands- und Bewegungs-Kalibrierung wird `calibration_mode_on_boot` wieder auf `false` gesetzt und PoolGuard erneut geflasht. Danach läuft wieder der stromsparende Normalbetrieb.
 

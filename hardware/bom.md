@@ -10,7 +10,7 @@ This list describes the current PoolGuard prototype. Exact connectors, cable len
 | 1 | Waterproof DS18B20 probe | Three-wire version recommended |
 | 1 | 18650 holder | Single-cell holder, approximately 70 × 20 × 19 mm, centre screw hole |
 | 1 | Protected 18650 cell | Reputable manufacturer and suitable capacity |
-| 1 | P-channel MOSFET or load switch | High-side switching of the A02 supply; final circuit still to be validated |
+| 1 | Pololu Mini MOSFET Slide Switch LV #2810 | High-side switching of the A02 supply; final wiring still to be validated |
 | 1 | 4.7 kΩ resistor | DS18B20 data pull-up to 3.3 V |
 | 1 | 1 MΩ resistor | Battery-voltage divider, upper resistor |
 | 1 | 330 kΩ resistor | Battery-voltage divider, lower resistor |
@@ -25,7 +25,7 @@ This list describes the current PoolGuard prototype. Exact connectors, cable len
 
 ## Not yet final
 
-- MOSFET/load-switch type and gate circuit
+- final Pololu 2810 wiring/current measurement
 - exact GPIO assignment
 - charger arrangement and charging connector
 - final screw lengths
