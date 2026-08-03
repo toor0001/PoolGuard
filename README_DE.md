@@ -6,7 +6,7 @@ Deutsch · [English](README.md)
 
 PoolGuard ist ein DIY-Sensormodul, das passgenau und ohne Bohren oder Schneiden in den Deckel eines **AstralPool-Skimmers mit 17,5 l** eingesetzt und dort mit geeignetem Klebstoff beziehungsweise neutralvernetzendem Silikon befestigt werden kann.
 
-Das Modul misst den Abstand zur Wasseroberfläche und damit den aktuellen Füllstand des Pools. Zusätzlich erfasst es die Wassertemperatur. Anhand der Bewegung beziehungsweise Unruhe der Wasseroberfläche kann außerdem erkannt werden, ob die Umwälzpumpe gerade läuft.
+Das Modul misst den Abstand zur Wasseroberfläche und damit den aktuellen Füllstand des Pools. Zusätzlich erfasst es die Wassertemperatur. Anhand der Bewegung beziehungsweise Unruhe der Wasseroberfläche kann außerdem erkannt werden, ob die Umwälzpumpe gerade läuft. Deutlich stärkere und unregelmäßige Oberflächenbewegungen können zusätzlich darauf hindeuten, dass sich gerade jemand im Pool befindet.
 
 Die Elektronik ist konsequent auf einen sehr niedrigen Energieverbrauch ausgelegt. Durch Deep Sleep und das vollständige Abschalten der Sensorik zwischen den Messungen soll PoolGuard mit einer Akkuladung über die gesamte Poolsaison betrieben werden können.
 
@@ -17,7 +17,8 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 - eine Pool-Wärmepumpe abhängig von der gemessenen Wassertemperatur ein- oder ausschalten;
 - die Umwälzpumpe bei zu niedrigem Füllstand deaktivieren, damit sie nicht trockenläuft;
 - bei zu hohem oder zu niedrigem Wasserstand eine Warnung senden;
-- eine UV-C-Lampe ausschließlich dann einschalten, wenn tatsächlich eine Wasserumwälzung erkannt wird.
+- eine UV-C-Lampe ausschließlich dann einschalten, wenn tatsächlich eine Wasserumwälzung erkannt wird;
+- **Personenerkennung im Pool:** Sind die Bewegungen der Wasseroberfläche deutlich stärker und unregelmäßiger als bei laufender Umwälzpumpe, kann daraus abgeleitet werden, dass vermutlich gerade jemand badet.
 
 > **Projektstatus:** Prototyp / in Entwicklung. Aktuell wird zuerst die Passschablone für die Fächer 3 und 4 getestet. Den Originaldeckel noch nicht bohren, schneiden oder dauerhaft verkleben, bevor die aktuelle CAD-Version geprüft wurde.
 
@@ -32,6 +33,7 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 - Deep Sleep für eine sehr lange Batterielaufzeit
 - Batteriespannungsmessung über Spannungsteiler
 - experimentelle Pumpenerkennung anhand der kurzfristigen Wasserunruhe
+- experimentelle Personenerkennung anhand deutlich stärkerer und unregelmäßiger Oberflächenbewegungen
 - lokale Einbindung in ESPHome und Home Assistant
 - passgenauer 3D-gedruckter Einsatz für den AstralPool-Skimmerdeckel
 
@@ -60,7 +62,7 @@ Der Body sitzt in den Skimmerfächern 3 und 4 und wird später seitlich mit geei
 3. Pins und Kalibrierwerte in `esphome/poolguard.yaml` prüfen.
 4. XIAO ESP32-C3 zunächst per USB flashen.
 5. `distance_empty_cm` und `distance_full_cm` im eingebauten Zustand kalibrieren.
-6. Vor Aktivierung der Pumpenerkennung mehrere Messzyklen mit Pumpe an und aus vergleichen.
+6. Vor Aktivierung der Pumpen- oder Personenerkennung mehrere Messzyklen mit Pumpe an und aus sowie mit und ohne Badebetrieb vergleichen.
 
 ## Sicherheit
 
@@ -68,7 +70,7 @@ Der Body sitzt in den Skimmerfächern 3 und 4 und wird später seitlich mit geei
 - Akku nicht kurzschließen, quetschen, verpolen oder unbeaufsichtigt laden.
 - Elektronik vor Kondenswasser und Spritzwasser schützen.
 - Den A02YYUW über MOSFET oder Load-Switch im Deep Sleep vollständig abschalten.
-- Pumpenerkennung nur als Hinweis verwenden, niemals als alleinige sicherheitsrelevante Abschaltung.
+- Pumpen- und Personenerkennung nur als Hinweis verwenden, niemals als alleinige sicherheitsrelevante Abschaltung oder Überwachung.
 
 ## Unterstützung
 
