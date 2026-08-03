@@ -89,7 +89,7 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 
 ## Support
 
-[![Buy me a coffee via PayPal](https://img.shields.io/badge/☕_Buy_me_a_coffee-via_PayPal-0070BA?logo=paypal&logoColor=white)](https://paypal.me/toor0001)
+<a href="https://paypal.me/toor0001"><img src="assets/paypal-support-en.svg" alt="Buy me a coffee via PayPal" width="430"></a>
 
 ## License
 
