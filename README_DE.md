@@ -31,7 +31,7 @@ Der Body sitzt im Skimmer und wird später seitlich mit geeignetem neutralvernet
 
 ## Schnellstart
 
-1. Passschablone aus `cad/stl/` drucken und die Kontur prüfen.
+1. Passschablone aus `cad/stl/` drucken und die Bohrungen manuell vornehmen.
 2. `esphome/secrets.example.yaml` als Vorlage für die eigenen ESPHome-Secrets verwenden.
 3. Pins und Kalibrierwerte in `esphome/poolguard.yaml` prüfen.
 4. XIAO ESP32-C3 zunächst per USB flashen.
