@@ -106,6 +106,11 @@ logger:
   baud_rate: 0
   level: INFO
 
+# Calibration writes are rare, so save learned values immediately rather than
+# risking the final profile being lost if power is removed straight afterwards.
+preferences:
+  flash_write_interval: 0s
+
 api:
   id: poolguard_api
   reboot_timeout: 0s
@@ -555,7 +560,7 @@ script:
             }
           }
 
-          # Pump state is intentionally held while person-like motion is active.
+          // Pump state is intentionally held while person-like motion is active.
           if (!poolguard_rtc.person_state) {
             const bool raw_pump = motion_cm >= pump_threshold;
             if (raw_pump) {
