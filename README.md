@@ -14,7 +14,7 @@ PoolGuard data can be used to build automations such as:
 - disabling the circulation pump when the water level is too low, helping to prevent dry running;
 - sending a warning when the pool level is too high or too low;
 - operating a UV-C lamp only while active water circulation is actually detected;
-- detecting whether someone is in the pool.
+- detecting unusually strong pool activity that can indicate somebody is in the pool.
 
 > **Project status:** prototype / work in progress. Do not drill, cut or permanently glue the original skimmer lid before checking the current version.
 
@@ -59,6 +59,30 @@ This gives the following behavior:
 - **GPIO2 LOW:** A02YYUW powered off
 - during deep sleep the A02YYUW remains unpowered
 
+## Measurement and low-power operation
+
+In normal operation PoolGuard wakes roughly once per minute and performs a short A02YYUW measurement burst locally. Wi-Fi remains disabled for these checks. PoolGuard only connects to Wi-Fi immediately when the detected pump, pool-activity or low-water state changes. Water level, water temperature and battery level are additionally reported approximately every 30 minutes.
+
+The last reported states are kept in ESP32 RTC memory during deep sleep. This avoids unnecessary flash writes every minute. If a Wi-Fi/API transmission fails, the state change remains pending and is retried after the next wake-up.
+
+## Guided motion calibration
+
+Pump and pool-activity detection depend heavily on the actual skimmer, pump flow, water level and pool geometry. PoolGuard therefore includes a guided calibration mode instead of relying only on fixed thresholds.
+
+For initial commissioning, temporarily set `calibration_mode_on_boot: "true"` in `esphome/poolguard.yaml` and flash the XIAO. PoolGuard then stays awake and connected to Home Assistant. Run the three calibration buttons in this order:
+
+1. **Calibrate Quiet Water** – pump off and nobody in the pool.
+2. **Calibrate Pump** – circulation pump running, nobody in the pool.
+3. **Calibrate Person** – normal swimming/bathing movement in the pool.
+
+Each phase measures about 60 seconds. Internally this is split into twelve five-second windows. PoolGuard stores the **median** water-motion range, so one unusual splash should not dominate the calibration. When the learned profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically places the pump threshold halfway between quiet and pump, and the person/activity threshold halfway between pump and person.
+
+The learned values are stored persistently and survive normal power cycles. If the three profiles overlap or are in the wrong order, the previous/fallback thresholds remain active and the calibration should be repeated. Diagnostic entities in Home Assistant show the three learned motion profiles, the active thresholds and the current calibration status.
+
+After calibration, set `calibration_mode_on_boot` back to `false` and flash PoolGuard once more to return to the normal battery-saving mode.
+
+> **Important:** PoolGuard does not detect a person directly. It classifies water-surface motion. Pump/activity detection is therefore an experimental indication and must not be used as a safety system or as a substitute for pool supervision.
+
 ## Mechanical concept
 
 The housing body sits inside the skimmer and will later be fixed to the side ribs using suitable neutral-curing silicone. The original centre rib remains completely intact. The removable lower lid carries the electronics:
@@ -77,7 +101,9 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 3. Review all pins and calibration values in `esphome/poolguard.yaml`.
 4. Flash the XIAO ESP32-C3 via USB first.
 5. Calibrate `distance_empty_cm` and `distance_full_cm` with the module installed in the skimmer.
-6. Compare multiple measurement cycles with the pump on and off, and with and without people in the pool, before enabling pump or person detection.
+6. Determine the real minimum safe water level for your skimmer/pump and adjust `min_safe_water_level_percent`.
+7. Run the guided quiet-water, pump and person/activity calibration described above.
+8. Return `calibration_mode_on_boot` to `false` and flash the normal low-power configuration.
 
 ## Safety
 
@@ -85,7 +111,7 @@ The current printable files are available in [`3D-Files/`](3D-Files/).
 - Do not short, crush, reverse or charge the cell unattended.
 - Keep the electronics protected from condensation and splash water.
 - Use the Pololu 2810 to fully power down the A02YYUW during deep sleep.
-- Treat pump and person detection as indications only, never as the sole basis for a safety-critical shutdown or monitoring function.
+- Treat pump and person/activity detection as indications only, never as the sole basis for a safety-critical shutdown or monitoring function.
 
 ## Support
 
