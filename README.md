@@ -26,15 +26,16 @@ The following list will be expanded with purchase links over time:
 
 | Part | Purpose | Link |
 |---|---|---|
-| Seeed Studio XIAO ESP32-C3 | Microcontroller / ESPHome | – |
-| DFRobot A02YYUW | Distance measurement to the water surface | – |
+| Seeed Studio XIAO ESP32-C3 | Microcontroller / ESPHome | [Amazon](https://link.amazon/B0iQQg2zF) |
+| USB-C breakout cable | Power / connection | [Amazon](https://link.amazon/B0eO8jr4N) |
+| DFRobot A02YYUW | Distance measurement to the water surface | [Amazon](https://link.amazon/B0dWRfbC4) |
 | Waterproof DS18B20 | Pool-water temperature | – |
 | Protected 18650 Li-ion cell | Power supply | – |
-| 18650 battery holder | Battery mounting | – |
+| 18650 battery holder | Battery mounting | [Amazon](https://link.amazon/B0hraa6X7) |
 | MOSFET / load switch | Powering down the A02YYUW during deep sleep | – |
 | External 2.4 GHz Wi-Fi antenna | Improving Wi-Fi reception | – |
 
-> **Affiliate disclosure:** Some of the product links that will be added here may be affiliate links. If you purchase something through one of these links, I may receive a small commission at no additional cost to you. This helps support the continued development of my DIY projects.
+> **Affiliate disclosure:** Some of the product links listed here may be affiliate links. If you purchase something through one of these links, I may receive a small commission at no additional cost to you. This helps support the continued development of my DIY projects.
 
 ## Mechanical concept
 
