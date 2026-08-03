@@ -8,6 +8,8 @@ PoolGuard is a DIY sensor module for an **AstralPool 17.5 L skimmer lid**. It me
 
 > **Project status:** prototype / work in progress. The mechanical fit template is currently being tested. Do not drill, cut or glue the original skimmer lid before checking the current CAD notes.
 
+> **Name and affiliation:** PoolGuard is an independent open-source DIY project. It is not affiliated with, endorsed by or connected to any company, brand or commercial product using the PoolGuard name.
+
 ## Features
 
 - Water-level monitoring with a waterproof **DFRobot A02YYUW** ultrasonic sensor
