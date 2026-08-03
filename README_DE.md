@@ -131,6 +131,8 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 
 Software und Dokumentation stehen unter der MIT-Lizenz. Die CAD-Dateien sind aktuell noch Prototypen; vor dem ersten stabilen Release kann dafür eine eigene Hardware-Lizenz ergänzt werden.
 
-## Projekterstellung
+## Hinweis zur Entwicklung
 
-Dieses Projekt wurde mit Unterstützung von ChatGPT und Codex entwickelt.
+Dieses Projekt ist im Rahmen eines kollaborativen **Vibe-Coding-Workflows** mit **ChatGPT** und **OpenAI Codex** entstanden. Beide Tools wurden für Code-Erstellung, Reviews, Fehlersuche und Dokumentation eingesetzt.
+
+Hardwareaufbau, Integrationsentscheidungen, praktische Tests und die abschließende Verantwortung für das Projekt liegen beim Projektbetreiber.
