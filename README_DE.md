@@ -4,7 +4,20 @@
 
 Deutsch · [English](README.md)
 
-PoolGuard ist ein DIY-Sensormodul für den Deckel eines **AstralPool-Skimmers mit 17,5 l**. Es überwacht den Abstand zur Wasseroberfläche, die Wassertemperatur und die Batteriespannung. Aus mehreren schnellen Abstandsmessungen kann zusätzlich versuchsweise erkannt werden, ob die Umwälzpumpe läuft und die Wasseroberfläche dadurch unruhiger ist.
+PoolGuard ist ein DIY-Sensormodul, das passgenau und ohne Bohren oder Schneiden in den Deckel eines **AstralPool-Skimmers mit 17,5 l** eingesetzt und dort mit geeignetem Klebstoff beziehungsweise neutralvernetzendem Silikon befestigt werden kann.
+
+Das Modul misst den Abstand zur Wasseroberfläche und damit den aktuellen Füllstand des Pools. Zusätzlich erfasst es die Wassertemperatur. Anhand der Bewegung beziehungsweise Unruhe der Wasseroberfläche kann außerdem erkannt werden, ob die Umwälzpumpe gerade läuft.
+
+Die Elektronik ist konsequent auf einen sehr niedrigen Energieverbrauch ausgelegt. Durch Deep Sleep und das vollständige Abschalten der Sensorik zwischen den Messungen soll PoolGuard mit einer Akkuladung über die gesamte Poolsaison betrieben werden können.
+
+## Möglichkeiten in Home Assistant
+
+Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen umsetzen:
+
+- eine Pool-Wärmepumpe abhängig von der gemessenen Wassertemperatur ein- oder ausschalten;
+- die Umwälzpumpe bei zu niedrigem Füllstand deaktivieren, damit sie nicht trockenläuft;
+- bei zu hohem oder zu niedrigem Wasserstand eine Warnung senden;
+- eine UV-C-Lampe ausschließlich dann einschalten, wenn tatsächlich eine Wasserumwälzung erkannt wird.
 
 > **Projektstatus:** Prototyp / in Entwicklung. Aktuell wird zuerst die Passschablone für die Fächer 3 und 4 getestet. Den Originaldeckel noch nicht bohren, schneiden oder dauerhaft verkleben, bevor die aktuelle CAD-Version geprüft wurde.
 
@@ -16,11 +29,11 @@ PoolGuard ist ein DIY-Sensormodul für den Deckel eines **AstralPool-Skimmers mi
 - Wassertemperatur mit wasserdichtem **DS18B20**
 - **Seeed Studio XIAO ESP32-C3** mit externer 2,4-GHz-Antenne
 - eine geschützte 18650-Zelle
-- Deep Sleep für lange Batterielaufzeit
+- Deep Sleep für eine sehr lange Batterielaufzeit
 - Batteriespannungsmessung über Spannungsteiler
 - experimentelle Pumpenerkennung anhand der kurzfristigen Wasserunruhe
 - lokale Einbindung in ESPHome und Home Assistant
-- 3D-gedruckter Einsatz ausschließlich für dieses Skimmer-Projekt
+- passgenauer 3D-gedruckter Einsatz für den AstralPool-Skimmerdeckel
 
 ## Verzeichnisstruktur
 
@@ -55,7 +68,7 @@ Der Body sitzt in den Skimmerfächern 3 und 4 und wird später seitlich mit geei
 - Akku nicht kurzschließen, quetschen, verpolen oder unbeaufsichtigt laden.
 - Elektronik vor Kondenswasser und Spritzwasser schützen.
 - Den A02YYUW über MOSFET oder Load-Switch im Deep Sleep vollständig abschalten.
-- Pumpenerkennung nur als Hinweis verwenden, niemals als sicherheitsrelevante Abschaltung.
+- Pumpenerkennung nur als Hinweis verwenden, niemals als alleinige sicherheitsrelevante Abschaltung.
 
 ## Unterstützung
 
