@@ -4,11 +4,7 @@
 
 Deutsch · [English](README.md)
 
-PoolGuard ist ein DIY-Sensormodul, das passgenau und ohne Bohren oder Schneiden in den Deckel eines **AstralPool-Skimmers mit 17,5 l** eingesetzt und dort mit geeignetem Klebstoff beziehungsweise neutralvernetzendem Silikon befestigt werden kann.
-
-Das Modul misst den Abstand zur Wasseroberfläche und damit den aktuellen Füllstand des Pools. Zusätzlich erfasst es die Wassertemperatur. Anhand der Bewegung beziehungsweise Unruhe der Wasseroberfläche kann außerdem erkannt werden, ob die Umwälzpumpe gerade läuft. Deutlich stärkere und unregelmäßige Oberflächenbewegungen können zusätzlich darauf hindeuten, dass sich gerade jemand im Pool befindet.
-
-Die Elektronik ist konsequent auf einen sehr niedrigen Energieverbrauch ausgelegt. Durch Deep Sleep und das vollständige Abschalten der Sensorik zwischen den Messungen soll PoolGuard mit einer Akkuladung über die gesamte Poolsaison betrieben werden können.
+PoolGuard ist ein DIY-Sensormodul, das passgenau und ohne Bohren in den Deckel eines **AstralPool-Skimmers mit 17,5 l** eingeklebt werden kann. Das Modul misst den Abstand zur Wasseroberfläche und damit den aktuellen Füllstand des Pools. Zusätzlich erfasst es die Wassertemperatur. Anhand der Bewegung beziehungsweise Unruhe der Wasseroberfläche kann außerdem erkannt werden, ob die Umwälzpumpe gerade läuft. Deutlich stärkere und unregelmäßige Oberflächenbewegungen können zusätzlich darauf hindeuten, dass sich gerade jemand im Pool befindet. Die Elektronik ist konsequent auf einen sehr niedrigen Energieverbrauch ausgelegt. Durch Deep Sleep und das vollständige Abschalten der Sensorik zwischen den Messungen soll PoolGuard mit einer Akkuladung über die gesamte Poolsaison betrieben werden können.
 
 ## Möglichkeiten in Home Assistant
 
@@ -24,31 +20,9 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 
 > **Name und Zugehörigkeit:** PoolGuard ist ein unabhängiges Open-Source-DIY-Projekt. Es besteht keine Verbindung zu Unternehmen, Marken oder kommerziellen Produkten, die ebenfalls den Namen PoolGuard verwenden.
 
-## Funktionen
-
-- Wasserstand mit wasserdichtem **DFRobot A02YYUW**
-- Wassertemperatur mit wasserdichtem **DS18B20**
-- **Seeed Studio XIAO ESP32-C3** mit externer 2,4-GHz-Antenne
-- eine geschützte 18650-Zelle
-- Deep Sleep für eine sehr lange Batterielaufzeit
-- Batteriespannungsmessung über Spannungsteiler
-- experimentelle Pumpenerkennung anhand der kurzfristigen Wasserunruhe
-- experimentelle Personenerkennung anhand deutlich stärkerer und unregelmäßiger Oberflächenbewegungen
-- lokale Einbindung in ESPHome und Home Assistant
-- passgenauer 3D-gedruckter Einsatz für den AstralPool-Skimmerdeckel
-
-## Verzeichnisstruktur
-
-```text
-cad/                 Parametrische Quellen und Testdrucke
-esphome/             ESPHome-Konfiguration
-hardware/            Verdrahtung und Stückliste
-docs/                Montage und Kalibrierung
-```
-
 ## Mechanisches Konzept
 
-Der Body sitzt in den Skimmerfächern 3 und 4 und wird später seitlich mit geeignetem neutralvernetzendem Silikon an den Rippen fixiert. Der originale Mittelsteg bleibt vollständig erhalten. Der lösbare Deckel trägt die Technik:
+Der Body sitzt im Skimmer und wird später seitlich mit geeignetem neutralvernetzendem Silikon an den Rippen fixiert. Der originale Mittelsteg bleibt vollständig erhalten. Der lösbare Deckel trägt die Technik:
 
 - Batteriehalter und ESP auf der trockenen Innenseite;
 - A02YYUW außen in Richtung Wasser;
