@@ -46,9 +46,11 @@ The housing body sits inside the skimmer and will later be fixed to the side rib
 - feed-through for the DS18B20 cable;
 - external Wi-Fi antenna positioned as close as possible to the plastic skimmer lid.
 
+The current printable files are available in [`3D-Files/`](3D-Files/).
+
 ## Quick start
 
-1. Print the fit template from `cad/stl/` and drill the required holes manually.
+1. Download and print the current files from `3D-Files/`.
 2. Use `esphome/secrets.example.yaml` as a template for your own ESPHome secrets.
 3. Review all pins and calibration values in `esphome/poolguard.yaml`.
 4. Flash the XIAO ESP32-C3 via USB first.
