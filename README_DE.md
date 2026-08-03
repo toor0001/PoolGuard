@@ -16,7 +16,7 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 - eine UV-C-Lampe ausschließlich dann einschalten, wenn tatsächlich eine Wasserumwälzung erkannt wird;
 - Personenerkennung im Pool
 
-> **Projektstatus:** Prototyp / in Entwicklung. Aktuell wird zuerst die Passschablone für die Fächer 3 und 4 getestet. Den Originaldeckel noch nicht bohren, schneiden oder dauerhaft verkleben, bevor die aktuelle CAD-Version geprüft wurde.
+> **Projektstatus:** Prototyp / in Entwicklung. Den Originaldeckel noch nicht bohren, schneiden oder dauerhaft verkleben, bevor die aktuelle Version geprüft wurde.
 
 > **Name und Zugehörigkeit:** PoolGuard ist ein unabhängiges Open-Source-DIY-Projekt. Es besteht keine Verbindung zu Unternehmen, Marken oder kommerziellen Produkten, die ebenfalls den Namen PoolGuard verwenden.
 
@@ -46,9 +46,11 @@ Der Body sitzt im Skimmer und wird später seitlich mit geeignetem neutralvernet
 - Durchführung für das DS18B20-Kabel;
 - externe WLAN-Antenne möglichst nah am Kunststoffdeckel.
 
+Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
+
 ## Schnellstart
 
-1. Passschablone aus `cad/stl/` drucken und die Bohrungen manuell vornehmen.
+1. Aktuelle Dateien aus `3D-Files/` herunterladen und drucken.
 2. `esphome/secrets.example.yaml` als Vorlage für die eigenen ESPHome-Secrets verwenden.
 3. Pins und Kalibrierwerte in `esphome/poolguard.yaml` prüfen.
 4. XIAO ESP32-C3 zunächst per USB flashen.
