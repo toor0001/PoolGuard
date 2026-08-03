@@ -1,0 +1,20 @@
+# ESPHome secrets and generated files
+secrets.yaml
+*.bin
+*.elf
+*.map
+.esphome/
+
+# CAD / slicer temporary files
+*.bak
+*.tmp
+*.autosave
+*.gcode
+*.bgcode
+*.3mf~
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
