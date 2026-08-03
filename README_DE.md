@@ -89,7 +89,7 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 
 ## Unterstützung
 
-<a href="https://buymeacoffee.com/toor0001"><img src="https://img.buymeacoffee.com/button-api/?text=Spendiere%20mir%20einen%20Kaffee&emoji=%E2%98%95&slug=toor0001&button_colour=FFDD00&font_colour=000000&font_family=Lato&outline_colour=000000&coffee_colour=ffffff" alt="Spendiere mir einen Kaffee"></a>
+[![Unterstützen via PayPal](https://img.shields.io/badge/PayPal-Unterstützen-0070BA?logo=paypal&logoColor=white)](https://paypal.me/toor0001)
 
 ## Lizenz
 
