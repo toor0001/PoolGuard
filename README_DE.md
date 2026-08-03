@@ -8,6 +8,8 @@ PoolGuard ist ein DIY-Sensormodul für den Deckel eines **AstralPool-Skimmers mi
 
 > **Projektstatus:** Prototyp / in Entwicklung. Aktuell wird zuerst die Passschablone für die Fächer 3 und 4 getestet. Den Originaldeckel noch nicht bohren, schneiden oder dauerhaft verkleben, bevor die aktuelle CAD-Version geprüft wurde.
 
+> **Name und Zugehörigkeit:** PoolGuard ist ein unabhängiges Open-Source-DIY-Projekt. Es besteht keine Verbindung zu Unternehmen, Marken oder kommerziellen Produkten, die ebenfalls den Namen PoolGuard verwenden.
+
 ## Funktionen
 
 - Wasserstand mit wasserdichtem **DFRobot A02YYUW**
