@@ -94,7 +94,7 @@ After water-level and motion calibration, set `calibration_mode_on_boot` back to
 
 ## Mechanical concept
 
-The housing body sits inside the skimmer and is fixed to the side ribs using suitable neutral-curing silicone. The original centre rib remains intact. The removable lower lid carries the electronics:
+The housing body sits inside the skimmer and is fixed to the side ribs using suitable neutral-curing silicone. The original centre rib remains intact. The body is intentionally **slightly sloped towards the inside of the skimmer**, so any water that reaches the housing can drain back into the skimmer instead of collecting on the body. The removable lower lid carries the electronics:
 
 - battery holder and ESP on the dry/internal side;
 - A02YYUW on the water-facing side;
