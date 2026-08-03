@@ -1,0 +1,250 @@
+substitutions:
+  device_name: poolguard
+  friendly_name: PoolGuard
+
+  # Verify these GPIO assignments against the final wiring before flashing.
+  a02_rx_pin: GPIO20
+  a02_power_pin: GPIO2
+  one_wire_pin: GPIO4
+  battery_adc_pin: GPIO3
+
+  # Runtime and sleep period. The node wakes, measures, publishes and sleeps again.
+  run_duration: 35s
+  sleep_duration: 10min
+
+  # Experimental pump detection threshold: distance range within one burst.
+  pump_motion_threshold_cm: "1.5"
+
+  distance_empty_cm: !secret poolguard_distance_empty_cm
+  distance_full_cm: !secret poolguard_distance_full_cm
+  battery_r_top: !secret poolguard_battery_r_top
+  battery_r_bottom: !secret poolguard_battery_r_bottom
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: Battery-powered pool-skimmer level and temperature monitor
+  on_boot:
+    priority: 600
+    then:
+      - output.turn_on: a02_power
+      - delay: 700ms
+      - lambda: |-
+          id(sample_count) = 0;
+          id(sample_min_mm) = 100000;
+          id(sample_max_mm) = 0;
+          id(sample_sum_mm) = 0;
+          id(valid_frame_count) = 0;
+
+esp32:
+  board: seeed_xiao_esp32c3
+  framework:
+    type: esp-idf
+
+logger:
+  baud_rate: 0
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  power_save_mode: HIGH
+  ap:
+    ssid: "PoolGuard Fallback"
+    password: "poolguard-setup"
+
+captive_portal:
+
+output:
+  - platform: gpio
+    id: a02_power
+    pin: ${a02_power_pin}
+
+uart:
+  id: a02_uart
+  rx_pin: ${a02_rx_pin}
+  baud_rate: 9600
+  rx_buffer_size: 256
+
+one_wire:
+  - platform: gpio
+    pin: ${one_wire_pin}
+    id: poolguard_onewire
+
+globals:
+  - id: sample_count
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: valid_frame_count
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: sample_min_mm
+    type: int
+    restore_value: no
+    initial_value: "100000"
+  - id: sample_max_mm
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: sample_sum_mm
+    type: long
+    restore_value: no
+    initial_value: "0"
+  - id: a02_frame
+    type: std::vector<uint8_t>
+    restore_value: no
+
+sensor:
+  - platform: dallas_temp
+    one_wire_id: poolguard_onewire
+    index: 0
+    name: "Water Temperature"
+    id: water_temperature
+    resolution: 11
+    update_interval: never
+
+  - platform: adc
+    pin: ${battery_adc_pin}
+    id: battery_adc
+    name: "Battery Voltage"
+    attenuation: 12db
+    update_interval: never
+    filters:
+      - multiply: !lambda |-
+          return (${battery_r_top} + ${battery_r_bottom}) / ${battery_r_bottom};
+    unit_of_measurement: V
+    accuracy_decimals: 2
+    device_class: voltage
+    state_class: measurement
+
+  - platform: template
+    id: distance_cm
+    name: "Distance to Water"
+    unit_of_measurement: cm
+    accuracy_decimals: 1
+    device_class: distance
+    state_class: measurement
+    update_interval: never
+
+  - platform: template
+    id: water_level_percent
+    name: "Water Level"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: never
+
+  - platform: template
+    id: water_motion_cm
+    name: "Water Surface Motion"
+    unit_of_measurement: cm
+    accuracy_decimals: 1
+    state_class: measurement
+    update_interval: never
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_rssi
+    update_interval: 20s
+
+binary_sensor:
+  - platform: template
+    id: pump_detected
+    name: "Pump Detected"
+    device_class: running
+
+button:
+  - platform: template
+    name: "Measure Now"
+    on_press:
+      - script.execute: publish_measurement
+
+script:
+  - id: publish_measurement
+    mode: restart
+    then:
+      - component.update: water_temperature
+      - component.update: battery_adc
+      - delay: 1200ms
+      - lambda: |-
+          if (id(valid_frame_count) < 5) {
+            ESP_LOGW("poolguard", "Not enough valid A02 frames: %d", id(valid_frame_count));
+            id(distance_cm).publish_state(NAN);
+            id(water_motion_cm).publish_state(NAN);
+            id(pump_detected).publish_state(false);
+            return;
+          }
+
+          const float average_cm = (id(sample_sum_mm) / (float) id(valid_frame_count)) / 10.0f;
+          const float motion_cm = (id(sample_max_mm) - id(sample_min_mm)) / 10.0f;
+          const float empty_cm = ${distance_empty_cm};
+          const float full_cm = ${distance_full_cm};
+          float level = 100.0f * (empty_cm - average_cm) / (empty_cm - full_cm);
+          level = std::max(0.0f, std::min(100.0f, level));
+
+          id(distance_cm).publish_state(average_cm);
+          id(water_motion_cm).publish_state(motion_cm);
+          id(water_level_percent).publish_state(level);
+          id(pump_detected).publish_state(motion_cm >= ${pump_motion_threshold_cm});
+
+          ESP_LOGI("poolguard", "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%%",
+                   id(valid_frame_count), average_cm, motion_cm, level);
+
+interval:
+  # Parse the common four-byte A02 UART frame:
+  # 0xFF, distance high byte, distance low byte, checksum.
+  - interval: 20ms
+    then:
+      - lambda: |-
+          while (id(a02_uart).available()) {
+            uint8_t byte;
+            if (!id(a02_uart).read_byte(&byte)) break;
+
+            auto &frame = id(a02_frame);
+            if (frame.empty()) {
+              if (byte == 0xFF) frame.push_back(byte);
+              continue;
+            }
+
+            frame.push_back(byte);
+            if (frame.size() < 4) continue;
+
+            const uint8_t checksum = (frame[0] + frame[1] + frame[2]) & 0xFF;
+            if (checksum == frame[3]) {
+              const int distance_mm = (frame[1] << 8) | frame[2];
+              if (distance_mm >= 30 && distance_mm <= 4500) {
+                id(sample_min_mm) = std::min(id(sample_min_mm), distance_mm);
+                id(sample_max_mm) = std::max(id(sample_max_mm), distance_mm);
+                id(sample_sum_mm) += distance_mm;
+                id(valid_frame_count)++;
+              }
+            }
+            frame.clear();
+          }
+
+  # Publish once enough time has elapsed for a useful burst of readings.
+  - interval: 12s
+    then:
+      - script.execute: publish_measurement
+
+deep_sleep:
+  id: poolguard_sleep
+  run_duration: ${run_duration}
+  sleep_duration: ${sleep_duration}
+
+# Notes:
+# - The A02 parser assumes the common 4-byte UART output frame. Confirm the
+#   operating mode of the exact sensor variant before final assembly.
+# - For OTA updates, temporarily comment out deep_sleep or keep the node awake.
+# - Pump detection is experimental and must be calibrated in the real skimmer.
