@@ -20,6 +20,22 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 
 > **Name und Zugehörigkeit:** PoolGuard ist ein unabhängiges Open-Source-DIY-Projekt. Es besteht keine Verbindung zu Unternehmen, Marken oder kommerziellen Produkten, die ebenfalls den Namen PoolGuard verwenden.
 
+## Bauteile
+
+Die folgende Liste wird nach und nach um Bezugsquellen ergänzt:
+
+| Bauteil | Verwendung | Link |
+|---|---|---|
+| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | – |
+| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | – |
+| Wasserdichter DS18B20 | Wassertemperatur | – |
+| Geschützte 18650 Li-Ion-Zelle | Stromversorgung | – |
+| 18650-Batteriehalter | Aufnahme des Akkus | – |
+| MOSFET / Load-Switch | Abschalten des A02YYUW im Deep Sleep | – |
+| Externe 2,4-GHz-WLAN-Antenne | Verbesserung der WLAN-Verbindung | – |
+
+> **Affiliate-Hinweis:** Einige der künftig hier verlinkten Produktlinks können Affiliate-Links sein. Wenn du über einen solchen Link etwas kaufst, erhalte ich möglicherweise eine kleine Provision. Für dich ändert sich der Preis dadurch nicht. Damit unterstützt du die Weiterentwicklung meiner DIY-Projekte.
+
 ## Mechanisches Konzept
 
 Der Body sitzt im Skimmer und wird später seitlich mit geeignetem neutralvernetzendem Silikon an den Rippen fixiert. Der originale Mittelsteg bleibt vollständig erhalten. Der lösbare Deckel trägt die Technik:
