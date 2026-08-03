@@ -8,12 +8,20 @@ substitutions:
   one_wire_pin: GPIO4
   battery_adc_pin: GPIO3
 
-  # Runtime and sleep period. The node wakes, measures, publishes and sleeps again.
-  run_duration: 35s
-  sleep_duration: 10min
+  # One short local A02 check roughly every minute. WiFi stays off unless a
+  # state changes or the 30-minute status report is due.
+  sleep_duration: 55s
+  detection_burst_duration: 5s
+  status_every_wakes: "30"
 
-  # Experimental pump detection threshold: distance range within one burst.
+  # Experimental motion thresholds. Tune these in the real skimmer.
+  # A strong person-like burst temporarily freezes pump classification because
+  # the A02 alone cannot reliably separate pump motion from a swimmer at once.
   pump_motion_threshold_cm: "1.5"
+  person_motion_threshold_cm: "3.0"
+  pump_confirm_cycles: "2"
+  person_on_confirm_cycles: "1"
+  person_off_confirm_cycles: "2"
 
   distance_empty_cm: !secret poolguard_distance_empty_cm
   distance_full_cm: !secret poolguard_distance_full_cm
@@ -23,18 +31,38 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
-  comment: Battery-powered pool-skimmer level and temperature monitor
+  comment: Battery-powered pool-skimmer level, temperature and motion monitor
+  includes:
+    - poolguard_rtc.h
   on_boot:
     priority: 600
     then:
-      - output.turn_on: a02_power
-      - delay: 700ms
       - lambda: |-
+          if (poolguard_rtc.magic != POOLGUARD_RTC_MAGIC) {
+            poolguard_rtc.magic = POOLGUARD_RTC_MAGIC;
+            poolguard_rtc.wake_count = 0;
+            poolguard_rtc.pump_state = 0;
+            poolguard_rtc.person_state = 0;
+            poolguard_rtc.reported_pump_state = -1;
+            poolguard_rtc.reported_person_state = -1;
+            poolguard_rtc.pump_on_streak = 0;
+            poolguard_rtc.pump_off_streak = 0;
+            poolguard_rtc.person_on_streak = 0;
+            poolguard_rtc.person_off_streak = 0;
+          }
+
+          poolguard_rtc.wake_count++;
           id(sample_count) = 0;
           id(sample_min_mm) = 100000;
           id(sample_max_mm) = 0;
           id(sample_sum_mm) = 0;
           id(valid_frame_count) = 0;
+          id(a02_frame).clear();
+          id(report_needed) = false;
+          id(status_report_due) = (poolguard_rtc.wake_count >= ${status_every_wakes});
+      - output.turn_on: a02_power
+      - delay: ${detection_burst_duration}
+      - script.execute: evaluate_cycle
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -46,6 +74,8 @@ logger:
   level: INFO
 
 api:
+  id: poolguard_api
+  reboot_timeout: 0s
   encryption:
     key: !secret api_encryption_key
 
@@ -54,15 +84,14 @@ ota:
     password: !secret ota_password
 
 wifi:
+  id: poolguard_wifi
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   fast_connect: true
   power_save_mode: HIGH
-  ap:
-    ssid: "PoolGuard Fallback"
-    password: "poolguard-setup"
-
-captive_portal:
+  enable_on_boot: false
+  reboot_timeout: 0s
+  ap_timeout: 0s
 
 output:
   - platform: gpio
@@ -104,6 +133,14 @@ globals:
   - id: a02_frame
     type: std::vector<uint8_t>
     restore_value: no
+  - id: report_needed
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: status_report_due
+    type: bool
+    restore_value: no
+    initial_value: "false"
 
 sensor:
   - platform: dallas_temp
@@ -156,7 +193,7 @@ sensor:
   - platform: wifi_signal
     name: "WiFi Signal"
     id: wifi_rssi
-    update_interval: 20s
+    update_interval: 10s
 
 binary_sensor:
   - platform: template
@@ -164,25 +201,27 @@ binary_sensor:
     name: "Pump Detected"
     device_class: running
 
+  - platform: template
+    id: person_detected
+    name: "Person Detected"
+    device_class: occupancy
+
 button:
   - platform: template
     name: "Measure Now"
     on_press:
-      - script.execute: publish_measurement
+      - script.execute: evaluate_cycle
 
 script:
-  - id: publish_measurement
+  - id: evaluate_cycle
     mode: restart
     then:
-      - component.update: water_temperature
-      - component.update: battery_adc
-      - delay: 1200ms
+      - output.turn_off: a02_power
       - lambda: |-
           if (id(valid_frame_count) < 5) {
             ESP_LOGW("poolguard", "Not enough valid A02 frames: %d", id(valid_frame_count));
-            id(distance_cm).publish_state(NAN);
-            id(water_motion_cm).publish_state(NAN);
-            id(pump_detected).publish_state(false);
+            // Do not change pump/person state on an invalid burst. Retry next wake.
+            id(report_needed) = id(status_report_due);
             return;
           }
 
@@ -196,10 +235,115 @@ script:
           id(distance_cm).publish_state(average_cm);
           id(water_motion_cm).publish_state(motion_cm);
           id(water_level_percent).publish_state(level);
-          id(pump_detected).publish_state(motion_cm >= ${pump_motion_threshold_cm});
 
-          ESP_LOGI("poolguard", "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%%",
-                   id(valid_frame_count), average_cm, motion_cm, level);
+          const bool raw_person = motion_cm >= ${person_motion_threshold_cm};
+
+          // Person state debounce.
+          if (raw_person) {
+            poolguard_rtc.person_off_streak = 0;
+            if (!poolguard_rtc.person_state) {
+              poolguard_rtc.person_on_streak++;
+              if (poolguard_rtc.person_on_streak >= ${person_on_confirm_cycles}) {
+                poolguard_rtc.person_state = 1;
+                poolguard_rtc.person_on_streak = 0;
+              }
+            } else {
+              poolguard_rtc.person_on_streak = 0;
+            }
+          } else {
+            poolguard_rtc.person_on_streak = 0;
+            if (poolguard_rtc.person_state) {
+              poolguard_rtc.person_off_streak++;
+              if (poolguard_rtc.person_off_streak >= ${person_off_confirm_cycles}) {
+                poolguard_rtc.person_state = 0;
+                poolguard_rtc.person_off_streak = 0;
+              }
+            } else {
+              poolguard_rtc.person_off_streak = 0;
+            }
+          }
+
+          // Pump classification is updated only while no person is detected.
+          // Strong swimmer-induced motion would otherwise look like an active pump.
+          if (!poolguard_rtc.person_state) {
+            const bool raw_pump = motion_cm >= ${pump_motion_threshold_cm};
+            if (raw_pump) {
+              poolguard_rtc.pump_off_streak = 0;
+              if (!poolguard_rtc.pump_state) {
+                poolguard_rtc.pump_on_streak++;
+                if (poolguard_rtc.pump_on_streak >= ${pump_confirm_cycles}) {
+                  poolguard_rtc.pump_state = 1;
+                  poolguard_rtc.pump_on_streak = 0;
+                }
+              } else {
+                poolguard_rtc.pump_on_streak = 0;
+              }
+            } else {
+              poolguard_rtc.pump_on_streak = 0;
+              if (poolguard_rtc.pump_state) {
+                poolguard_rtc.pump_off_streak++;
+                if (poolguard_rtc.pump_off_streak >= ${pump_confirm_cycles}) {
+                  poolguard_rtc.pump_state = 0;
+                  poolguard_rtc.pump_off_streak = 0;
+                }
+              } else {
+                poolguard_rtc.pump_off_streak = 0;
+              }
+            }
+          }
+
+          id(pump_detected).publish_state(poolguard_rtc.pump_state != 0);
+          id(person_detected).publish_state(poolguard_rtc.person_state != 0);
+
+          const bool pump_changed =
+              poolguard_rtc.reported_pump_state != poolguard_rtc.pump_state;
+          const bool person_changed =
+              poolguard_rtc.reported_person_state != poolguard_rtc.person_state;
+          id(report_needed) = pump_changed || person_changed || id(status_report_due);
+
+          ESP_LOGI("poolguard",
+                   "frames=%d distance=%.1fcm motion=%.1fcm level=%.0f%% pump=%d person=%d report=%d",
+                   id(valid_frame_count), average_cm, motion_cm, level,
+                   poolguard_rtc.pump_state, poolguard_rtc.person_state,
+                   id(report_needed));
+      - if:
+          condition:
+            lambda: 'return id(status_report_due);'
+          then:
+            - component.update: water_temperature
+            - component.update: battery_adc
+            - delay: 800ms
+      - if:
+          condition:
+            lambda: 'return id(report_needed);'
+          then:
+            - wifi.enable:
+            - wait_until:
+                condition:
+                  api.connected:
+                    state_subscription_only: true
+                timeout: 15s
+            - if:
+                condition:
+                  api.connected:
+                    state_subscription_only: true
+                then:
+                  - delay: 750ms
+                  - lambda: |-
+                      poolguard_rtc.reported_pump_state = poolguard_rtc.pump_state;
+                      poolguard_rtc.reported_person_state = poolguard_rtc.person_state;
+                      if (id(status_report_due)) {
+                        poolguard_rtc.wake_count = 0;
+                      }
+                      ESP_LOGI("poolguard", "State/status report delivered to Home Assistant");
+                else:
+                  - logger.log:
+                      level: WARN
+                      format: "WiFi/API timeout; state change remains pending and will be retried next wake"
+            - wifi.disable:
+      - deep_sleep.enter:
+          id: poolguard_sleep
+          sleep_duration: ${sleep_duration}
 
 interval:
   # Parse the common four-byte A02 UART frame:
@@ -233,18 +377,25 @@ interval:
             frame.clear();
           }
 
-  # Publish once enough time has elapsed for a useful burst of readings.
-  - interval: 12s
-    then:
-      - script.execute: publish_measurement
-
 deep_sleep:
   id: poolguard_sleep
-  run_duration: ${run_duration}
-  sleep_duration: ${sleep_duration}
 
+# Behaviour:
+# - Wake roughly once per minute.
+# - Power A02 only for a short local measurement burst.
+# - Keep WiFi disabled during ordinary one-minute checks.
+# - Report immediately only when confirmed Pump/Person state changes.
+# - Report water level, temperature and battery approximately every 30 wakes.
+# - If WiFi/API delivery fails, the last-reported RTC state is not updated, so
+#   the transition is retried on the next wake.
+#
 # Notes:
-# - The A02 parser assumes the common 4-byte UART output frame. Confirm the
-#   operating mode of the exact sensor variant before final assembly.
-# - For OTA updates, temporarily comment out deep_sleep or keep the node awake.
-# - Pump detection is experimental and must be calibrated in the real skimmer.
+# - Pump/person thresholds are experimental and must be calibrated in the real
+#   skimmer. The A02 measures water motion, not people directly.
+# - During confirmed person motion, pump state is held at its previous value;
+#   one A02 cannot reliably separate simultaneous swimmer and pump motion.
+# - RTC state survives deep sleep without per-minute flash writes, but resets
+#   after a complete power loss. The first wake after power-up therefore sends
+#   a complete state report.
+# - For OTA updates, temporarily set wifi.enable_on_boot to true and prevent or
+#   comment out deep sleep while flashing.
