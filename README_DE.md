@@ -32,10 +32,32 @@ Die folgende Liste wird nach und nach um Bezugsquellen ergänzt:
 | Wasserdichter DS18B20 | Wassertemperatur | [Amazon](https://link.amazon/B08FcJbtj) |
 | Geschützte 18650 Li-Ion-Zelle | Stromversorgung | – |
 | 18650-Batteriehalter | Aufnahme des Akkus | [Amazon](https://link.amazon/B0hraa6X7) |
-| MOSFET / Load-Switch | Abschalten des A02YYUW im Deep Sleep | – |
+| **Pololu Mini MOSFET Slide Switch LV #2810** | A02YYUW im Deep Sleep vollständig abschalten | [Pololu](https://www.pololu.com/product/2810) |
 | Externe 2,4-GHz-WLAN-Antenne | Verbesserung der WLAN-Verbindung | – |
 
 > **Affiliate-Hinweis:** Einige der hier verlinkten Produktlinks können Affiliate-Links sein. Wenn du über einen solchen Link etwas kaufst, erhalte ich möglicherweise eine kleine Provision. Für dich ändert sich der Preis dadurch nicht. Damit unterstützt du die Weiterentwicklung meiner DIY-Projekte.
+
+## A02YYUW-Stromversorgung
+
+Für den A02YYUW wird der fertige **Pololu Mini MOSFET Slide Switch with Reverse Voltage Protection, LV (#2810)** verwendet. Das Modul arbeitet bereits ab 2 V und eignet sich deshalb für die 3,3-V-Versorgung des XIAO ESP32-C3.
+
+Der mechanische Schiebeschalter des Pololu-Moduls bleibt für den automatischen Betrieb in Stellung **OFF**. Dann übernimmt der ESP32 die Steuerung über den `ON`-Eingang.
+
+```text
+XIAO 3.3 V  -------- VIN   Pololu 2810
+XIAO GND    -------- GND   Pololu 2810
+GPIO2       -------- ON    Pololu 2810
+Pololu VOUT -------- VCC   A02YYUW
+A02YYUW GND -------- GND
+A02YYUW TX  -------- GPIO20
+A02YYUW RX  -------- nicht anschließen
+```
+
+Damit gilt:
+
+- **GPIO2 HIGH:** A02YYUW eingeschaltet
+- **GPIO2 LOW:** A02YYUW ausgeschaltet
+- im Deep Sleep bleibt der A02YYUW stromlos
 
 ## Mechanisches Konzept
 
@@ -62,7 +84,7 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 - Nur eine geschützte, qualitativ gute 18650-Zelle verwenden.
 - Akku nicht kurzschließen, quetschen, verpolen oder unbeaufsichtigt laden.
 - Elektronik vor Kondenswasser und Spritzwasser schützen.
-- Den A02YYUW über MOSFET oder Load-Switch im Deep Sleep vollständig abschalten.
+- Den A02YYUW über den Pololu 2810 im Deep Sleep vollständig abschalten.
 - Pumpen- und Personenerkennung nur als Hinweis verwenden, niemals als alleinige sicherheitsrelevante Abschaltung oder Überwachung.
 
 ## Unterstützung
