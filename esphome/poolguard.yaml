@@ -3,6 +3,7 @@ substitutions:
   friendly_name: PoolGuard
 
   # Verify these GPIO assignments against the final wiring before flashing.
+  # GPIO5 avoids the ESP32-C3 strapping pins GPIO2/GPIO8/GPIO9.
   a02_rx_pin: GPIO20
   a02_power_pin: GPIO5
   one_wire_pin: GPIO4
@@ -39,8 +40,6 @@ substitutions:
   # BATTERY CALIBRATION
   battery_r_top: !secret poolguard_battery_r_top
   battery_r_bottom: !secret poolguard_battery_r_bottom
-  battery_empty_v: "3.20"
-  battery_full_v: "4.20"
 
 esphome:
   name: ${device_name}
@@ -79,11 +78,11 @@ esphome:
             lambda: 'return ${calibration_mode_on_boot};'
           then:
             - wifi.enable:
-            - output.turn_on: a02_power
+            - output.turn_off: a02_power
             - text_sensor.template.publish:
                 id: calibration_status
                 state: "Ready - set water reference and motion profiles"
-            - logger.log: "Calibration mode active; PoolGuard stays awake"
+            - logger.log: "Calibration mode active; A02 stays off until a calibration action starts"
           else:
             - output.turn_on: a02_power
             - delay: ${detection_burst_duration}
@@ -255,18 +254,19 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            const float empty_v = ${battery_empty_v};
-            const float full_v = ${battery_full_v};
-            float pct = 100.0f * (x - empty_v) / (full_v - empty_v);
-            if (x > empty_v && x < full_v) {
-              // Approximate rested single-cell Li-ion SOC. Still an estimate
-              // under load, but closer to the flat discharge curve than a
-              // direct linear voltage-to-percent mapping.
-              static const float curve[][2] = {
-                  {3.20f, 0.0f},  {3.30f, 5.0f},  {3.50f, 15.0f},
-                  {3.65f, 35.0f}, {3.75f, 55.0f}, {3.85f, 70.0f},
-                  {4.00f, 85.0f}, {4.10f, 95.0f}, {4.20f, 100.0f}};
-              for (size_t i = 1; i < sizeof(curve) / sizeof(curve[0]); i++) {
+            // Approximate rested single-cell Li-ion SOC. Still an estimate
+            // under load, but closer to the flat discharge curve than a
+            // direct linear voltage-to-percent mapping.
+            static const float curve[][2] = {
+                {3.20f, 0.0f},  {3.30f, 5.0f},  {3.50f, 15.0f},
+                {3.65f, 35.0f}, {3.75f, 55.0f}, {3.85f, 70.0f},
+                {4.00f, 85.0f}, {4.10f, 95.0f}, {4.20f, 100.0f}};
+            const size_t points = sizeof(curve) / sizeof(curve[0]);
+            float pct = curve[0][1];
+            if (x >= curve[points - 1][0]) {
+              pct = curve[points - 1][1];
+            } else {
+              for (size_t i = 1; i < points; i++) {
                 if (x <= curve[i][0]) {
                   const float v0 = curve[i - 1][0];
                   const float p0 = curve[i - 1][1];
@@ -398,6 +398,12 @@ button:
   - platform: template
     name: "Measure Now"
     on_press:
+      - lambda: |-
+          id(sample_distances_mm).clear();
+          id(valid_frame_count) = 0;
+          id(a02_frame).clear();
+      - output.turn_on: a02_power
+      - delay: ${detection_burst_duration}
       - script.execute: evaluate_cycle
 
   # WATER-LEVEL REFERENCE CALIBRATION
@@ -405,11 +411,11 @@ button:
     name: "Set Water Level Reference"
     entity_category: config
     on_press:
-      - output.turn_on: a02_power
       - lambda: |-
           id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
+      - output.turn_on: a02_power
       - text_sensor.template.publish:
           id: calibration_status
           state: "Measuring water reference..."
@@ -500,6 +506,9 @@ script:
           if (id(calibration_active)) return;
           id(calibration_active) = true;
           id(calibration_samples).clear();
+          id(sample_distances_mm).clear();
+          id(valid_frame_count) = 0;
+          id(a02_frame).clear();
       - output.turn_on: a02_power
       - text_sensor.template.publish:
           id: calibration_status
