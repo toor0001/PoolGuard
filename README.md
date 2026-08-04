@@ -101,7 +101,7 @@ The housing body sits inside the skimmer and is fixed to the side ribs using sui
 - feed-through for the DS18B20 cable;
 - external Wi-Fi antenna positioned close to the plastic skimmer lid.
 
-The current printable files are available in [`3D-Files/`](3D-Files/).
+The current printable files are available in [`3D-Files/`](3D-Files/). I use a Bambu Lab A1 Min1.
 
 <p align="center">
   <img src="images/PG.jpg" alt="Body" width="90%">
