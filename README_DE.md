@@ -103,6 +103,10 @@ Der Body sitzt im Skimmer und wird seitlich mit geeignetem neutralvernetzendem S
 
 Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 
+<p align="center">
+  <img src="images/PG.jpg" alt="Body" width="90%">
+</p>
+
 ## Schnellstart
 
 1. Aktuelle Dateien aus `3D-Files/` herunterladen und drucken.
