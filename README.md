@@ -103,6 +103,10 @@ The housing body sits inside the skimmer and is fixed to the side ribs using sui
 
 The current printable files are available in [`3D-Files/`](3D-Files/).
 
+<p align="center">
+  <img src="images/pg.jpg" alt="IBCGuard" width="80%">
+</p>
+
 ## Quick start
 
 1. Download and print the current files from `3D-Files/`.
