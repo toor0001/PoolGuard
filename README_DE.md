@@ -101,7 +101,7 @@ Der Body sitzt im Skimmer und wird seitlich mit geeignetem neutralvernetzendem S
 - Durchführung für das DS18B20-Kabel;
 - externe WLAN-Antenne möglichst nah am Kunststoffdeckel.
 
-Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
+Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/). Ich drucke mit einem Bambu Lab A1 Mini.
 
 <p align="center">
   <img src="images/PG.jpg" alt="Body" width="90%">
