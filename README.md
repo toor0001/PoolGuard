@@ -103,7 +103,9 @@ The housing body sits inside the skimmer and is fixed to the side ribs using sui
 
 The current printable files are available in [`3D-Files/`](3D-Files/).
 
-![Body](images/PG.jpg)
+<p align="center">
+  <img src="images/PG.jpg" alt="Body" width="90%">
+</p>
 
 ## Quick start
 
