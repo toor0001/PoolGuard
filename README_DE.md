@@ -125,7 +125,7 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/).
 
 ## Unterstützung
 
-<a href="https://paypal.me/toor0001"><img src="assets/paypal-support-de.svg" alt="Spendiere mir einen Kaffee via PayPal" width="430"></a>
+<a href="https://paypal.me/toor0001/5"><img src="assets/paypal-support-de.svg" alt="Spendiere mir einen Kaffee via PayPal" width="430"></a>
 
 ## Lizenz
 
