@@ -2,12 +2,11 @@ substitutions:
   device_name: poolguard
   friendly_name: PoolGuard
 
-  # XIAO ESP32-C3 pin map: D7=GPIO20, D2=GPIO4, D3=GPIO5, D1=GPIO3.
+  # XIAO ESP32-C3 pin map: D7=GPIO20, D2=GPIO4, D3=GPIO5.
   # None of these are ESP32-C3 strapping pins (GPIO2/GPIO8/GPIO9).
   a02_rx_pin: GPIO20
   a02_power_pin: GPIO4
   one_wire_pin: GPIO5
-  battery_adc_pin: GPIO3
 
   # Normal low-power operation: one local motion check about once per minute.
   sleep_duration: 55s
@@ -36,10 +35,6 @@ substitutions:
   pump_confirm_cycles: "2"
   person_on_confirm_cycles: "1"
   person_off_confirm_cycles: "2"
-
-  # BATTERY CALIBRATION
-  battery_r_top: !secret poolguard_battery_r_top
-  battery_r_bottom: !secret poolguard_battery_r_bottom
 
 esphome:
   name: ${device_name}
@@ -248,54 +243,6 @@ sensor:
     name: "Water Temperature"
     id: water_temperature
     resolution: 11
-    update_interval: never
-
-  # Voltage remains internal; Home Assistant receives Battery Level only.
-  - platform: adc
-    pin: ${battery_adc_pin}
-    id: battery_voltage_raw
-    internal: true
-    attenuation: 12db
-    update_interval: never
-    filters:
-      - multiply: !lambda |-
-          return (${battery_r_top} + ${battery_r_bottom}) / ${battery_r_bottom};
-    on_value:
-      then:
-        - lambda: |-
-            // Approximate rested single-cell Li-ion SOC. Still an estimate
-            // under load, but closer to the flat discharge curve than a
-            // direct linear voltage-to-percent mapping.
-            static const float curve[][2] = {
-                {3.20f, 0.0f},  {3.30f, 5.0f},  {3.50f, 15.0f},
-                {3.65f, 35.0f}, {3.75f, 55.0f}, {3.85f, 70.0f},
-                {4.00f, 85.0f}, {4.10f, 95.0f}, {4.20f, 100.0f}};
-            const size_t points = sizeof(curve) / sizeof(curve[0]);
-            float pct = curve[0][1];
-            if (x >= curve[points - 1][0]) {
-              pct = curve[points - 1][1];
-            } else {
-              for (size_t i = 1; i < points; i++) {
-                if (x <= curve[i][0]) {
-                  const float v0 = curve[i - 1][0];
-                  const float p0 = curve[i - 1][1];
-                  const float v1 = curve[i][0];
-                  const float p1 = curve[i][1];
-                  pct = p0 + (x - v0) * (p1 - p0) / (v1 - v0);
-                  break;
-                }
-              }
-            }
-            pct = std::max(0.0f, std::min(100.0f, pct));
-            id(battery_level).publish_state(pct);
-
-  - platform: template
-    id: battery_level
-    name: "Battery Level"
-    unit_of_measurement: "%"
-    accuracy_decimals: 0
-    device_class: battery
-    state_class: measurement
     update_interval: never
 
   - platform: template
@@ -562,7 +509,6 @@ script:
       - script.stop: evaluate_cycle
       - output.turn_off: a02_power
       - component.update: water_temperature
-      - component.update: battery_voltage_raw
       - delay: 800ms
       - wifi.disable:
       - logger.log: "Maintenance Mode disabled; returning to normal deep sleep"
@@ -807,7 +753,6 @@ script:
             lambda: 'return id(status_report_due);'
           then:
             - component.update: water_temperature
-            - component.update: battery_voltage_raw
             - delay: 800ms
       - if:
           condition:
@@ -881,7 +826,7 @@ interval:
             frame.clear();
           }
 
-  # Live housekeeping values while Wi-Fi/API remain connected in maintenance.
+  # Live water temperature while Wi-Fi/API remain connected in maintenance.
   - interval: 30s
     then:
       - if:
@@ -889,7 +834,6 @@ interval:
             lambda: 'return id(maintenance_active);'
           then:
             - component.update: water_temperature
-            - component.update: battery_voltage_raw
 
 deep_sleep:
   id: poolguard_sleep

@@ -12,9 +12,6 @@ This list describes the current PoolGuard prototype. Exact connectors, cable len
 | 1 | Protected 18650 cell | Reputable manufacturer and suitable capacity |
 | 1 | Pololu Mini MOSFET Slide Switch LV #2810 | High-side switching of the A02 supply; final wiring still to be validated |
 | 1 | 4.7 kΩ resistor | DS18B20 data pull-up to 3.3 V |
-| 1 | 1 MΩ resistor | Battery-voltage divider, upper resistor |
-| 1 | 330 kΩ resistor | Battery-voltage divider, lower resistor |
-| 1 | 100 nF capacitor | ADC filtering near the ESP input |
 | 1 | Optional on/off switch | Useful for transport and servicing |
 | 4 | M2.5 screws | Removable PoolGuard housing lid; length depends on final bosses |
 | 2 | M3 screws, washers and nuts | A02 mounting; confirm against the final printed lid |
@@ -26,10 +23,8 @@ This list describes the current PoolGuard prototype. Exact connectors, cable len
 ## Not yet final
 
 - final Pololu 2810 wiring/current measurement
-- exact GPIO assignment
 - charger arrangement and charging connector
 - final screw lengths
 - gasket or sealing method between body and removable lid
-- final battery-voltage calibration
 
 Do not purchase large quantities from this list before the first complete prototype has been validated.

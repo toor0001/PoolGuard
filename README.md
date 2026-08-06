@@ -55,12 +55,12 @@ A02YYUW RX  -------- leave unconnected
 - during deep sleep the A02YYUW remains unpowered
 
 Set the Pololu's physical slide switch to off so ESPHome can control its ON pin.
-The DS18B20 data wire uses D3/GPIO5 with a 4.7 kΩ pull-up to 3.3 V. The battery
-divider output uses the non-strapping ADC1 pin D1/GPIO3.
+The DS18B20 data wire uses D3/GPIO5 with a 4.7 kΩ pull-up to 3.3 V. D1/GPIO3 is
+unused and available.
 
 ## Measurement and low-power operation
 
-In normal operation PoolGuard wakes roughly once per minute and performs a short local A02YYUW measurement burst. Wi-Fi remains disabled for these checks. PoolGuard only connects immediately when the detected pump, pool-activity or low-water state changes. Water depth, water-level percentage, estimated pool volume, water temperature and battery level are additionally reported approximately every 30 minutes.
+In normal operation PoolGuard wakes roughly once per minute and performs a short local A02YYUW measurement burst. Wi-Fi remains disabled for these checks. PoolGuard only connects immediately when the detected pump, pool-activity or low-water state changes. Water depth, water-level percentage, estimated pool volume and water temperature are additionally reported approximately every 30 minutes.
 
 The last reported states are kept in ESP32 RTC memory during deep sleep. If a Wi-Fi/API transmission fails, the state change remains pending and is retried after the next wake-up.
 
@@ -82,11 +82,11 @@ report can activate it earlier.
 While Maintenance Mode is active, PoolGuard stays awake with Wi-Fi/API
 connected. It performs a powered A02 burst and evaluates water level,
 pump/activity and person/activity approximately every 5 seconds. Water
-temperature and battery level update every 30 seconds. The A02 is switched off
+temperature updates every 30 seconds. The A02 is switched off
 between bursts. Leaving this mode enabled greatly reduces battery life.
 
 Turn the helper off to leave Maintenance Mode immediately. PoolGuard stops live
-measurements, switches the A02 off, performs final temperature/battery
+measurements, switches the A02 off, performs a final temperature
 housekeeping, and returns to its normal deep-sleep cycle without rebooting. The
 local active flag is intentionally not restored after an unexpected reset:
 battery-saving operation is the fail-safe default, while the retained HA helper

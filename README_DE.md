@@ -56,12 +56,12 @@ A02YYUW RX  -------- nicht anschließen
 
 Der mechanische Schiebeschalter des Pololu muss auf „off“ stehen, damit ESPHome
 den ON-Pin steuern kann. Die Datenleitung des DS18B20 liegt an D3/GPIO5 und
-benötigt einen 4,7-kΩ-Pull-up nach 3,3 V. Der Ausgang des Spannungsteilers liegt
-am nicht als Strapping-Pin verwendeten ADC1-Anschluss D1/GPIO3.
+benötigt einen 4,7-kΩ-Pull-up nach 3,3 V. D1/GPIO3 ist unbenutzt und frei
+verfügbar.
 
 ## Messzyklus und Stromsparbetrieb
 
-Im Normalbetrieb wacht PoolGuard ungefähr einmal pro Minute auf und macht lokal einen kurzen Messburst mit dem A02YYUW. WLAN bleibt dabei ausgeschaltet. Erst wenn sich Pumpenstatus, Badeaktivität oder Niedrigwasserstatus ändern, verbindet sich PoolGuard sofort und meldet den neuen Zustand. Wassertiefe, Wasserstand in Prozent, geschätztes Poolvolumen, Wassertemperatur und Batteriestand werden zusätzlich ungefähr alle 30 Minuten übertragen.
+Im Normalbetrieb wacht PoolGuard ungefähr einmal pro Minute auf und macht lokal einen kurzen Messburst mit dem A02YYUW. WLAN bleibt dabei ausgeschaltet. Erst wenn sich Pumpenstatus, Badeaktivität oder Niedrigwasserstatus ändern, verbindet sich PoolGuard sofort und meldet den neuen Zustand. Wassertiefe, Wasserstand in Prozent, geschätztes Poolvolumen und Wassertemperatur werden zusätzlich ungefähr alle 30 Minuten übertragen.
 
 Die zuletzt gemeldeten Zustände werden während Deep Sleep im RTC-Speicher gehalten. Schlägt eine WLAN-/API-Übertragung fehl, bleibt die Zustandsänderung offen und wird beim nächsten Aufwachen erneut versucht.
 
@@ -83,14 +83,14 @@ Aktivierung früher auslösen.
 
 Im Wartungsmodus bleibt PoolGuard wach und mit WLAN/API verbunden. Etwa alle
 5 Sekunden erfolgen ein eingeschalteter A02-Messburst sowie die Auswertung von
-Wasserstand, Pumpen- und Badeaktivität. Wassertemperatur und Akkustand werden
-alle 30 Sekunden aktualisiert. Zwischen den Messbursts wird der A02
+Wasserstand, Pumpen- und Badeaktivität. Die Wassertemperatur wird alle
+30 Sekunden aktualisiert. Zwischen den Messbursts wird der A02
 ausgeschaltet. Ein dauerhaft eingeschalteter Wartungsmodus verkürzt die
 Akkulaufzeit erheblich.
 
 Beim Ausschalten des Helfers endet der Wartungsmodus sofort. PoolGuard beendet
-die Live-Messungen, schaltet den A02 aus, aktualisiert abschließend Temperatur
-und Akkustand und kehrt ohne Neustart zum normalen Deep-Sleep-Zyklus zurück.
+die Live-Messungen, schaltet den A02 aus, aktualisiert abschließend die
+Temperatur und kehrt ohne Neustart zum normalen Deep-Sleep-Zyklus zurück.
 Nach einem unerwarteten Reset wird der lokale Aktivzustand absichtlich nicht
 wiederhergestellt: Der stromsparende Betrieb ist die sichere Voreinstellung;
 die in Home Assistant gespeicherte Anforderung kann bei einer späteren normalen

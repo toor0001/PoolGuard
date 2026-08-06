@@ -10,7 +10,6 @@ All notable project changes will be documented here.
 - Prototype ESPHome configuration for XIAO ESP32-C3
 - A02YYUW UART frame parser
 - DS18B20 water-temperature sensor configuration
-- Battery-voltage measurement template
 - Experimental pump detection from distance-measurement spread
 - Hardware bill of materials and wiring notes
 - German and English installation guides
