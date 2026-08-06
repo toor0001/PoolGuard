@@ -2,11 +2,11 @@ substitutions:
   device_name: poolguard
   friendly_name: PoolGuard
 
-  # Verify these GPIO assignments against the final wiring before flashing.
-  # GPIO5 avoids the ESP32-C3 strapping pins GPIO2/GPIO8/GPIO9.
+  # XIAO ESP32-C3 pin map: D7=GPIO20, D2=GPIO4, D3=GPIO5, D1=GPIO3.
+  # None of these are ESP32-C3 strapping pins (GPIO2/GPIO8/GPIO9).
   a02_rx_pin: GPIO20
-  a02_power_pin: GPIO5
-  one_wire_pin: GPIO4
+  a02_power_pin: GPIO4
+  one_wire_pin: GPIO5
   battery_adc_pin: GPIO3
 
   # Normal low-power operation: one local motion check about once per minute.
@@ -125,6 +125,8 @@ output:
   - platform: gpio
     id: a02_power
     pin: ${a02_power_pin}
+    # Pololu ON is active-high. The GPIO output initializes inactive; during
+    # reset/sleep the high-impedance pin leaves Pololu ON in its off state.
 
 uart:
   id: a02_uart

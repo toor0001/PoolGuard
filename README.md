@@ -43,16 +43,20 @@ The A02YYUW is powered through a **Pololu Mini MOSFET Slide Switch with Reverse 
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
 XIAO GND    -------- GND   Pololu 2810
-GPIO5       -------- ON    Pololu 2810
+D2 / GPIO4  -------- ON    Pololu 2810
 Pololu VOUT -------- VCC   A02YYUW
 A02YYUW GND -------- GND
-A02YYUW TX  -------- GPIO20
+A02YYUW TX  -------- D7 / GPIO20 (UART RX)
 A02YYUW RX  -------- leave unconnected
 ```
 
-- **GPIO5 HIGH:** A02YYUW powered on
-- **GPIO5 LOW:** A02YYUW powered off
+- **D2 / GPIO4 HIGH:** A02YYUW powered on
+- **D2 / GPIO4 LOW or high-impedance:** A02YYUW powered off
 - during deep sleep the A02YYUW remains unpowered
+
+Set the Pololu's physical slide switch to off so ESPHome can control its ON pin.
+The DS18B20 data wire uses D3/GPIO5 with a 4.7 kΩ pull-up to 3.3 V. The battery
+divider output uses the non-strapping ADC1 pin D1/GPIO3.
 
 ## Measurement and low-power operation
 

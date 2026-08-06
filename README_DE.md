@@ -43,16 +43,21 @@ Für den A02YYUW wird der **Pololu Mini MOSFET Slide Switch with Reverse Voltage
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
 XIAO GND    -------- GND   Pololu 2810
-GPIO5       -------- ON    Pololu 2810
+D2 / GPIO4  -------- ON    Pololu 2810
 Pololu VOUT -------- VCC   A02YYUW
 A02YYUW GND -------- GND
-A02YYUW TX  -------- GPIO20
+A02YYUW TX  -------- D7 / GPIO20 (UART RX)
 A02YYUW RX  -------- nicht anschließen
 ```
 
-- **GPIO5 HIGH:** A02YYUW eingeschaltet
-- **GPIO5 LOW:** A02YYUW ausgeschaltet
+- **D2 / GPIO4 HIGH:** A02YYUW eingeschaltet
+- **D2 / GPIO4 LOW oder hochohmig:** A02YYUW ausgeschaltet
 - im Deep Sleep bleibt der A02YYUW stromlos
+
+Der mechanische Schiebeschalter des Pololu muss auf „off“ stehen, damit ESPHome
+den ON-Pin steuern kann. Die Datenleitung des DS18B20 liegt an D3/GPIO5 und
+benötigt einen 4,7-kΩ-Pull-up nach 3,3 V. Der Ausgang des Spannungsteilers liegt
+am nicht als Strapping-Pin verwendeten ADC1-Anschluss D1/GPIO3.
 
 ## Messzyklus und Stromsparbetrieb
 

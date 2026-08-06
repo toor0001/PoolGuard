@@ -2,16 +2,18 @@
 
 > Prototype documentation. Confirm the pin labels on the exact XIAO ESP32-C3 board before soldering.
 
-## Proposed GPIO assignment
+## GPIO assignment
 
-| Function | ESP32-C3 GPIO | Notes |
-|---|---:|---|
-| A02 UART RX | GPIO20 | Sensor TX connects to ESP RX |
-| A02 power control | GPIO5 | Drives the Pololu 2810 ON pin; do not power the A02 directly from the GPIO |
-| DS18B20 data | GPIO4 | Add 4.7 kΩ pull-up to 3.3 V |
-| Battery ADC | GPIO3 | Connect only through the resistor divider |
+| XIAO pin | ESP32-C3 GPIO | Function | Notes |
+|---|---:|---|---|
+| D7 / RX | GPIO20 | A02 UART RX | Sensor TX connects to ESP RX |
+| D2 | GPIO4 | A02 power control | Drives the Pololu 2810 ON pin; do not power the A02 directly from the GPIO |
+| D3 | GPIO5 | DS18B20 data | Add 4.7 kΩ pull-up to 3.3 V |
+| D1 / A1 | GPIO3 (ADC1_CH3) | Battery ADC | Connect only through the resistor divider |
 
 These assignments are substitutions at the top of `esphome/poolguard.yaml` and can be changed without editing the rest of the configuration.
+GPIO2, GPIO8 and GPIO9 are ESP32-C3 strapping pins; none is used here. GPIO3
+uses ADC1 and is not a strapping pin, so the divider cannot select a boot mode.
 
 ## Block diagram
 
@@ -21,16 +23,16 @@ Protected 18650
      ├──────────────> XIAO battery/power input
      │
      ├─ Pololu 2810 ─────────────> A02YYUW VCC
-     │                              A02 TX ─────> GPIO20
+     │                              A02 TX ─────> D7 / GPIO20
      │                              A02 GND ────> GND
      │
-     ├─ 1 MΩ ──┬─────────────────> GPIO3 ADC
+     ├─ 1 MΩ ──┬─────────────────> D1 / GPIO3 ADC
      │          │
      │        330 kΩ
      │          │
      └──────────┴─────────────────> GND
 
-3.3 V ── 4.7 kΩ ──┬──────────────> GPIO4
+3.3 V ── 4.7 kΩ ──┬──────────────> D3 / GPIO5
                   └──────────────> DS18B20 DATA
 3.3 V ───────────────────────────> DS18B20 VCC
 GND   ───────────────────────────> DS18B20 GND
@@ -40,7 +42,7 @@ GND   ────────────────────────�
 
 ### A02 power switching
 
-The distance sensor must be fully switched off during deep sleep. GPIO5 is only a control signal for the Pololu 2810 ON input; do not power the sensor directly from the GPIO. Confirm that the sensor supply is disconnected without back-powering through its UART line.
+The distance sensor must be fully switched off during deep sleep. D2/GPIO4 is only a control signal for the Pololu 2810 ON input; do not power the sensor directly from the GPIO. Put the Pololu's physical slide switch in the off position so that its ON input controls the output. ON is active-high and the Pololu remains off when ON is low or disconnected. ESPHome initializes the GPIO output inactive; it is explicitly switched off before deep sleep, and the Pololu remains off when GPIO4 becomes high-impedance during reset or sleep. Confirm that the sensor supply is disconnected without back-powering through its UART line.
 
 A series resistor on the A02 TX line may be useful, and the UART line should not be allowed to feed the powered-down sensor. The final switching circuit is still to be validated on the bench.
 
