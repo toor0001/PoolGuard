@@ -16,8 +16,7 @@ The design focuses on low power consumption: the XIAO ESP32-C3 wakes only briefl
 
 - A02YYUW distance measurement to the water surface
 - real water depth from a single reference measurement
-- water-level percentage
-- estimated pool volume
+- water-level percentage and estimated pool volume
 - DS18B20 water temperature
 - low-water warning with hysteresis
 - circulation-pump detection from surface motion
@@ -29,10 +28,7 @@ The design focuses on low power consumption: the XIAO ESP32-C3 wakes only briefl
 - event-driven Wi-Fi/API reporting
 - deep sleep and complete A02YYUW power-off
 - OTA updates while awake / in maintenance mode
-
-## Home Assistant possibilities
-
-PoolGuard values can be used to control a pool heat pump from water temperature, stop the circulation pump at unsafe water level, send low-water notifications, operate a UV-C lamp only while circulation is detected, or display water depth, percentage and estimated volume in a dashboard.
+- status heartbeat for external Home Assistant offline monitoring
 
 ## Hardware
 
@@ -51,7 +47,7 @@ PoolGuard values can be used to control a pool heat pump from water temperature,
 
 ## Pin assignment
 
-The current firmware deliberately avoids ESP32-C3 strapping pins GPIO2, GPIO8 and GPIO9.
+The firmware deliberately avoids ESP32-C3 strapping pins GPIO2, GPIO8 and GPIO9.
 
 | Function | XIAO ESP32-C3 |
 |---|---|
@@ -61,8 +57,6 @@ The current firmware deliberately avoids ESP32-C3 strapping pins GPIO2, GPIO8 an
 | GPIO3 | unused/free |
 
 The DS18B20 requires a **4.7 kΩ pull-up between DATA and 3.3 V**.
-
-### A02YYUW through Pololu 2810
 
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
@@ -74,7 +68,7 @@ A02YYUW TX  -------- GPIO20 / D7
 A02YYUW RX  -------- leave unconnected
 ```
 
-Pololu `ON` is active-high. During deep sleep the GPIO is not held active and the A02YYUW remains unpowered.
+Pololu `ON` is active-high. During deep sleep the A02YYUW remains unpowered.
 
 ## Normal operation and power saving
 
@@ -86,25 +80,25 @@ detection_burst_duration: 5s
 status_every_wakes: "30"
 ```
 
-After commissioning, PoolGuard wakes roughly once per minute. The A02YYUW is powered, samples are collected during the measurement burst, and the sensor is switched off again immediately afterwards. Normal local checks do not require a permanent Wi-Fi connection.
+After commissioning, PoolGuard wakes roughly once per minute. The A02YYUW is powered, samples are collected during the measurement burst, and the sensor is switched off again immediately afterwards. Water level, low-water state, pump state and bathing activity are evaluated locally without turning Wi-Fi on for every wake.
 
-PoolGuard connects to Wi-Fi/Home Assistant when a relevant state changes – pump, bathing activity or low water – or when the periodic status report is due. By default the periodic report is due after about 30 wake cycles and also updates water temperature.
+A change in **pump**, **person/bathing activity** or **low-water state** causes PoolGuard to connect to Wi-Fi/Home Assistant during that measurement cycle and report the change. Without a state change, the regular status report is due after about **30 wake cycles**, roughly every 30 minutes. Water temperature is refreshed with that periodic report.
 
 Last states and counters are retained in ESP32 RTC memory across deep sleep. If Wi-Fi/API transmission fails, a state change remains pending and is retried on a later wake.
 
 ### Measurement burst vs. battery life
 
-`detection_burst_duration` is the main tuning parameter for the trade-off between detection robustness and battery life:
+`detection_burst_duration` controls the trade-off between detection robustness and battery life:
 
 ```yaml
 detection_burst_duration: 5s
 ```
 
-A longer burst supplies more A02 samples and can improve motion classification, but keeps the ESP and sensor active for longer. **Five seconds is a conservative commissioning/testing value.** After real-world validation, values such as **2 s or 1.5 s** can be tested and may substantially improve battery life.
+A longer burst supplies more A02 samples but keeps the ESP and sensor active for longer. **Five seconds is a conservative commissioning/testing value.** After real-world validation, values such as **2 s or 1.5 s** can be tested. At least five valid A02 frames are required for a valid normal cycle, so shorter bursts should only be used after practical testing.
 
-The firmware requires at least five valid A02 frames for a valid normal cycle, so shorter bursts should only be used after practical testing.
+The full wake interval can also be increased later, for example to roughly two minutes. This substantially reduces the number of measurement bursts, but state changes can then only be detected on the next wake. If the wake interval changes, adjust `status_every_wakes` so the desired periodic reporting interval – currently about 30 minutes – stays unchanged.
 
-Guided motion calibration is independent of this value and continues to use its own 5-second windows.
+Guided motion calibration is independent of the normal burst duration and continues to use its own 5-second windows.
 
 ## Robust A02 processing
 
@@ -112,65 +106,27 @@ The A02YYUW sends UART frames with a checksum. PoolGuard accepts only valid fram
 
 Distance is calculated from the **median** of the collected samples. Surface motion is calculated from approximately the 10th-to-90th-percentile span rather than raw min/max values, reducing the influence of isolated outliers and splashes.
 
-## Water-level calculation
+## Water level, volume and low-water detection
 
-PoolGuard does not require separate empty/full calibration points. One known real water depth is sufficient.
-
-During reference calibration PoolGuard stores both the current A02 distance and the actual measured water depth. Future water depth follows directly from changes in sensor-to-water distance.
+One known real water depth is enough as a reference. **Set Water Level Reference** stores the current A02 distance together with the actual measured pool depth. Future changes in sensor distance are converted directly into a new water depth.
 
 Default geometry:
 
 ```yaml
 pool_diameter_m: "5.0"
 pool_max_depth_cm: "120.0"
-```
-
-`Water Level` is current depth relative to configured maximum depth. `Pool Volume` assumes a cylindrical pool and uses `π × radius² × current depth`. At 5.0 m diameter and 120 cm depth this is approximately **23.56 m³**.
-
-Other pools should adjust these values. Non-cylindrical bottoms only receive an approximate volume.
-
-## Low-water detection
-
-`Minimum Safe Water Depth` is editable in Home Assistant and must be determined on the real skimmer. A 1 cm hysteresis is configured by default:
-
-```yaml
 low_water_hysteresis_cm: "1.0"
 ```
 
-`Low Water Level` becomes active when the minimum is reached or crossed and only clears after water rises to minimum + hysteresis. This prevents rapid toggling around the threshold.
+`Water Level` is the current depth relative to configured maximum depth. `Pool Volume` assumes a cylindrical pool and uses `π × radius² × current depth`; at 5.0 m diameter and 120 cm depth this is approximately **23.56 m³**.
+
+`Minimum Safe Water Depth` is set in Home Assistant for the real skimmer. `Low Water Level` becomes active when the minimum is reached or crossed and only clears after the level rises to minimum + hysteresis, preventing rapid toggling around the threshold.
 
 ## Initial Setup Mode
 
-A new or reset device automatically starts in **Initial Setup Mode**. There is no compile-time calibration switch and no second firmware flash is required.
+A new or reset device automatically starts in **Initial Setup Mode**. `initial_setup_completed` is stored persistently in flash and survives deep sleep, reset and complete power loss. No second firmware flash is required to leave commissioning mode.
 
-`initial_setup_completed` is stored persistently in flash and survives deep sleep, reset and complete power loss.
-
-While setup is incomplete:
-
-- deep sleep is prevented;
-- Wi-Fi/API remain available;
-- A02YYUW stays powered off while idle;
-- measurements happen only on request or during calibration;
-- water temperature is periodically refreshed while awake.
-
-### First commissioning
-
-1. Flash PoolGuard once via USB.
-2. The device automatically remains online in Initial Setup Mode.
-3. Measure the actual current pool-water depth in cm.
-4. Enter it as **Reference Water Depth**.
-5. Press **Set Water Level Reference**.
-6. Set **Minimum Safe Water Depth** for the real skimmer.
-7. Optionally calibrate the three motion profiles.
-8. Press **Finish Initial Setup**.
-
-PoolGuard then stores setup completion, disables Wi-Fi and enters normal deep-sleep operation.
-
-`Finish Initial Setup` is refused while motion calibration is running or if no valid water reference exists. Complete motion calibration is optional; fallback thresholds remain available.
-
-### Resetting Initial Setup
-
-**Reset Initial Setup** uses a two-press safeguard. Press it twice within 10 seconds to return the device to awake setup mode.
+While setup is incomplete, PoolGuard stays awake and reachable; the A02YYUW remains off while idle. Commissioning mainly consists of setting the water-level reference, minimum safe depth and optionally the motion profiles. **Finish Initial Setup** stores completion and enters normal deep-sleep operation. **Reset Initial Setup** uses a two-press, 10-second confirmation safeguard.
 
 ## Guided motion calibration
 
@@ -180,26 +136,16 @@ Three profiles can be learned:
 2. **Calibrate Pump** – circulation pump running, nobody in the pool.
 3. **Calibrate Person** – representative swimming/bathing movement.
 
-By default each profile uses **12 × 5-second windows**, about 60 seconds. Each window produces a robust motion value and the median of valid windows becomes the stored profile.
-
-If profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically learns thresholds halfway between the profiles. If they overlap or are out of order, previous or fallback thresholds remain active.
-
-Fallbacks:
+By default each profile uses **12 × 5-second windows**. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard calculates thresholds between the profiles automatically. Otherwise previous or fallback thresholds remain active:
 
 ```yaml
 pump_motion_threshold_cm: "1.5"
 person_motion_threshold_cm: "3.0"
 ```
 
-**Reset Motion Calibration** clears learned profiles and returns to fallback thresholds.
+Pump motion must normally be confirmed in two consecutive cycles. Person/activity indication switches on faster and needs two quiet cycles to clear. While person-like motion is active, the pump state is deliberately held.
 
-## State stabilisation
-
-Confirmation cycles reduce unwanted toggling from single measurement bursts. By default pump motion must be confirmed in two cycles. Person/activity indication switches on faster and requires two quiet cycles to clear.
-
-While person-like motion is active, the pump state is deliberately held so strong bathing motion is not misinterpreted as a pump-state change.
-
-## Maintenance Mode
+## Maintenance Mode and OTA
 
 Create a persistent Home Assistant helper with exactly this entity ID:
 
@@ -207,35 +153,45 @@ Create a persistent Home Assistant helper with exactly this entity ID:
 input_boolean.poolguard_maintenance_mode
 ```
 
-PoolGuard does **not** wake Wi-Fi every minute just to check this helper. Home Assistant retains the request and PoolGuard receives it during the next API connection that would have happened anyway. This preserves battery life, although activation may therefore be delayed until the next regular status/event report.
+PoolGuard does **not** wake Wi-Fi on every cycle just to check this helper. Home Assistant retains the request and PoolGuard receives it during the next API connection that would have happened anyway. While Maintenance Mode is active, PoolGuard stays awake and continuously performs measurement bursts. Switching it off returns PoolGuard to deep sleep if Initial Setup has been completed.
 
-While Maintenance Mode is active, PoolGuard stays awake and continuously performs measurement bursts. Switching the helper off ends maintenance and, if Initial Setup has already been completed, returns PoolGuard to deep sleep.
+For reliable OTA updates, enable Maintenance Mode first so PoolGuard stays awake and reachable during the update.
 
-Because Home Assistant stores the requested state, Maintenance Mode can be requested while PoolGuard is asleep.
+## Battery monitoring without ADC: Status Heartbeat
 
-## OTA updates
+PoolGuard intentionally has **no battery-voltage measurement**, voltage divider or Battery Level sensor. For the actual requirement – noticing that the battery is empty or the device has stopped reporting – external monitoring in Home Assistant is more robust.
 
-ESPHome OTA is configured. For reliable OTA updates, first put PoolGuard into Maintenance Mode so it remains awake and reachable. OTA is also available during Initial Setup Mode because the device stays online there.
+The firmware therefore exposes a diagnostic **Status Heartbeat** value. It is updated after a successful Wi-Fi/API report. With no events, that happens at the normal periodic report, by default about every 30 minutes; state changes can create additional heartbeats.
+
+The notification itself should **not** live in ESPHome: a PoolGuard with an empty battery cannot send a low-battery warning. Home Assistant should detect that expected heartbeats have stopped. A generous threshold such as **2 hours** is recommended so a single missed Wi-Fi connection does not immediately generate an alarm.
+
+A robust HA setup uses an `input_datetime.poolguard_last_seen` helper. One automation updates that helper whenever `sensor.poolguard_status_heartbeat` reports a valid value; a second automation checks whether the timestamp is more than two hours old and then sends a notification. Ignore `unknown` and `unavailable` when updating the helper because PoolGuard is intentionally offline between connections during normal deep-sleep operation.
+
+Example helper-update automation:
+
+```yaml
+alias: PoolGuard - Store heartbeat
+trigger:
+  - platform: state
+    entity_id: sensor.poolguard_status_heartbeat
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state.state not in ['unknown', 'unavailable', 'none'] }}
+action:
+  - service: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.poolguard_last_seen
+    data:
+      timestamp: "{{ now().timestamp() }}"
+mode: queued
+```
+
+The alert automation can then check periodically, for example every 15 minutes, whether `poolguard_last_seen` is more than two hours old. This catches an empty battery, Wi-Fi outage or a stuck device with the same mechanism.
 
 ## Home Assistant entities
 
-Important values/states include:
-
-- **Water Temperature**
-- **Distance to Water**
-- **Water Depth**
-- **Water Level**
-- **Pool Volume**
-- **Water Surface Motion**
-- **Pump Detected**
-- **Person Detected**
-- **Low Water Level**
-- **WiFi Signal**
-- **Calibration Status**
-
-Diagnostic entities expose the three learned motion profiles and the currently active pump/person thresholds.
-
-Configuration and controls include **Reference Water Depth**, **Minimum Safe Water Depth**, **Measure Now**, water-reference calibration, the three motion-calibration buttons, **Reset Motion Calibration**, **Finish Initial Setup**, and **Reset Initial Setup**.
+Important values/states include **Water Temperature**, **Distance to Water**, **Water Depth**, **Water Level**, **Pool Volume**, **Water Surface Motion**, **Pump Detected**, **Person Detected**, **Low Water Level**, **Status Heartbeat**, **WiFi Signal** and **Calibration Status**. Diagnostic entities also expose learned motion profiles and active thresholds.
 
 ## Mechanical concept
 
