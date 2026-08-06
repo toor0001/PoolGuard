@@ -158,6 +158,13 @@ globals:
     type: bool
     restore_value: no
     initial_value: "false"
+  # Runtime mirror of Home Assistant's persistent input_boolean. Deliberately
+  # not restored: after an unexpected reset PoolGuard defaults to low-power
+  # operation and accepts ON again at its next normal API connection.
+  - id: maintenance_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
 
   # WATER-LEVEL REFERENCE
   # One known real water depth plus the A02 distance measured at the same moment
@@ -383,6 +390,34 @@ text_sensor:
     entity_category: diagnostic
 
 binary_sensor:
+  # Home Assistant owns the requested state because PoolGuard is normally
+  # asleep. Create input_boolean.poolguard_maintenance_mode in HA; its retained
+  # state is delivered here on the next API connection that normal reporting
+  # would have made anyway. This does not add a periodic Wi-Fi check.
+  - platform: homeassistant
+    id: maintenance_mode_request
+    entity_id: input_boolean.poolguard_maintenance_mode
+    internal: true
+    # The retained helper state arrives as the first valid state after every
+    # API connection, so its initial publication must run the automation.
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - lambda: 'id(maintenance_active) = true;'
+              - wifi.enable:
+              - script.execute: maintenance_measurements
+              - logger.log: "Maintenance Mode enabled by Home Assistant"
+            else:
+              - if:
+                  condition:
+                    lambda: 'return id(maintenance_active);'
+                  then:
+                    - lambda: 'id(maintenance_active) = false;'
+                    - script.execute: leave_maintenance_mode
   - platform: template
     id: pump_detected
     name: "Pump Detected"
@@ -501,6 +536,40 @@ button:
           sleep_duration: ${sleep_duration}
 
 script:
+  # Five-second powered measurement bursts are more conservative than leaving
+  # the A02 continuously powered. evaluate_cycle switches Pololu ON off before
+  # processing each burst and cannot enter deep sleep while maintenance is on.
+  - id: maintenance_measurements
+    mode: single
+    then:
+      - while:
+          condition:
+            lambda: 'return id(maintenance_active);'
+          then:
+            - lambda: |-
+                id(sample_distances_mm).clear();
+                id(valid_frame_count) = 0;
+                id(a02_frame).clear();
+            - output.turn_on: a02_power
+            - delay: ${detection_burst_duration}
+            - script.execute: evaluate_cycle
+            - script.wait: evaluate_cycle
+
+  - id: leave_maintenance_mode
+    mode: restart
+    then:
+      - script.stop: maintenance_measurements
+      - script.stop: evaluate_cycle
+      - output.turn_off: a02_power
+      - component.update: water_temperature
+      - component.update: battery_voltage_raw
+      - delay: 800ms
+      - wifi.disable:
+      - logger.log: "Maintenance Mode disabled; returning to normal deep sleep"
+      - deep_sleep.enter:
+          id: poolguard_sleep
+          sleep_duration: ${sleep_duration}
+
   - id: run_motion_calibration
     mode: single
     then:
@@ -755,20 +824,37 @@ script:
                   api.connected:
                     state_subscription_only: true
                 then:
-                  - delay: 750ms
+                  - wait_until:
+                      condition:
+                        lambda: 'return id(maintenance_mode_request).has_state();'
+                      timeout: 2s
+                  - delay: 100ms
                   - lambda: |-
                       poolguard_rtc.reported_pump_state = poolguard_rtc.pump_state;
                       poolguard_rtc.reported_person_state = poolguard_rtc.person_state;
                       poolguard_rtc.reported_low_water_state = poolguard_rtc.low_water_state;
-                      if (id(status_report_due)) poolguard_rtc.wake_count = 0;
+                      if (id(status_report_due)) {
+                        poolguard_rtc.wake_count = 0;
+                        id(status_report_due) = false;
+                      }
                 else:
                   - logger.log:
                       level: WARN
                       format: "WiFi/API timeout; state change remains pending and will be retried next wake"
+      # The HA helper is received only after an existing report connection.
+      # Give its subscription state time to arrive before deciding to sleep.
+      - if:
+          condition:
+            lambda: 'return id(maintenance_active);'
+          then:
+            - wifi.enable:
+            - script.execute: maintenance_measurements
+          else:
+            - output.turn_off: a02_power
             - wifi.disable:
-      - deep_sleep.enter:
-          id: poolguard_sleep
-          sleep_duration: ${sleep_duration}
+            - deep_sleep.enter:
+                id: poolguard_sleep
+                sleep_duration: ${sleep_duration}
 
 interval:
   - interval: 20ms
@@ -794,6 +880,16 @@ interval:
             }
             frame.clear();
           }
+
+  # Live housekeeping values while Wi-Fi/API remain connected in maintenance.
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(maintenance_active);'
+          then:
+            - component.update: water_temperature
+            - component.update: battery_voltage_raw
 
 deep_sleep:
   id: poolguard_sleep

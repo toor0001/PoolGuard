@@ -65,6 +65,37 @@ Im Normalbetrieb wacht PoolGuard ungefähr einmal pro Minute auf und macht lokal
 
 Die zuletzt gemeldeten Zustände werden während Deep Sleep im RTC-Speicher gehalten. Schlägt eine WLAN-/API-Übertragung fehl, bleibt die Zustandsänderung offen und wird beim nächsten Aufwachen erneut versucht.
 
+## Wartungsmodus
+
+In Home Assistant wird ein dauerhafter Helfer namens **PoolGuard Maintenance
+Mode** mit der Entity-ID `input_boolean.poolguard_maintenance_mode` angelegt
+(Einstellungen → Geräte & Dienste → Helfer → Helfer erstellen → Schalter). Der
+Helfer hält den gewünschten Zustand fest. Ein einfacher ESPHome-Template-
+Schalter wäre dafür ungeeignet, weil PoolGuard im Deep Sleep offline ist.
+
+Das Einschalten wirkt während des Schlafens nicht sofort. PoolGuard verbindet
+sich für die lokalen Messungen im Minutenabstand weiterhin nicht mit dem WLAN.
+Die gespeicherte Anforderung wird erst bei der nächsten ohnehin erforderlichen,
+ereignisgesteuerten oder regelmäßigen Verbindung zur Home-Assistant-API
+übernommen. Beim voreingestellten Statusintervall von 30 Aufwachzyklen beträgt
+die maximale Verzögerung ungefähr 30 Minuten; eine Zustandsänderung kann die
+Aktivierung früher auslösen.
+
+Im Wartungsmodus bleibt PoolGuard wach und mit WLAN/API verbunden. Etwa alle
+5 Sekunden erfolgen ein eingeschalteter A02-Messburst sowie die Auswertung von
+Wasserstand, Pumpen- und Badeaktivität. Wassertemperatur und Akkustand werden
+alle 30 Sekunden aktualisiert. Zwischen den Messbursts wird der A02
+ausgeschaltet. Ein dauerhaft eingeschalteter Wartungsmodus verkürzt die
+Akkulaufzeit erheblich.
+
+Beim Ausschalten des Helfers endet der Wartungsmodus sofort. PoolGuard beendet
+die Live-Messungen, schaltet den A02 aus, aktualisiert abschließend Temperatur
+und Akkustand und kehrt ohne Neustart zum normalen Deep-Sleep-Zyklus zurück.
+Nach einem unerwarteten Reset wird der lokale Aktivzustand absichtlich nicht
+wiederhergestellt: Der stromsparende Betrieb ist die sichere Voreinstellung;
+die in Home Assistant gespeicherte Anforderung kann bei einer späteren normalen
+API-Verbindung erneut übernommen werden.
+
 ## Wasserstands-Referenzkalibrierung
 
 Für den Wasserstand sind keine getrennten „leer“-/„voll“-Referenzpunkte mehr nötig. **Ein einziger bekannter realer Wasserstand reicht.**

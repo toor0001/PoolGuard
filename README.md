@@ -64,6 +64,34 @@ In normal operation PoolGuard wakes roughly once per minute and performs a short
 
 The last reported states are kept in ESP32 RTC memory during deep sleep. If a Wi-Fi/API transmission fails, the state change remains pending and is retried after the next wake-up.
 
+## Maintenance Mode
+
+Create a persistent Home Assistant helper named **PoolGuard Maintenance Mode**
+with entity ID `input_boolean.poolguard_maintenance_mode` (Settings → Devices &
+services → Helpers → Create helper → Toggle). The helper, rather than an
+ESPHome template switch, owns the requested state so an ON command is retained
+while PoolGuard is asleep and offline.
+
+Turning the helper on is not immediate while PoolGuard sleeps. PoolGuard does
+not connect to Wi-Fi during each one-minute local measurement. It receives the
+retained request the next time the existing event-driven or periodic reporting
+logic connects to the Home Assistant API. With the default 30-wake status
+interval, the worst-case delay is approximately 30 minutes; a state-change
+report can activate it earlier.
+
+While Maintenance Mode is active, PoolGuard stays awake with Wi-Fi/API
+connected. It performs a powered A02 burst and evaluates water level,
+pump/activity and person/activity approximately every 5 seconds. Water
+temperature and battery level update every 30 seconds. The A02 is switched off
+between bursts. Leaving this mode enabled greatly reduces battery life.
+
+Turn the helper off to leave Maintenance Mode immediately. PoolGuard stops live
+measurements, switches the A02 off, performs final temperature/battery
+housekeeping, and returns to its normal deep-sleep cycle without rebooting. The
+local active flag is intentionally not restored after an unexpected reset:
+battery-saving operation is the fail-safe default, while the retained HA helper
+request can be accepted again at a later normal API connection.
+
 ## Water-level reference calibration
 
 PoolGuard no longer requires separate "empty" and "full" distance calibration points. One known real water depth is enough.
