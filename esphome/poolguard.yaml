@@ -13,11 +13,8 @@ substitutions:
   detection_burst_duration: 5s
   status_every_wakes: "30"
 
-  # INITIAL CALIBRATION MODE
-  # Set to true temporarily and flash PoolGuard. The node then stays awake and
-  # online so water-level and motion calibration can be performed from HA.
-  # Set back to false and flash again when commissioning is finished.
-  calibration_mode_on_boot: "false"
+  # Motion-calibration sampling. Initial Setup Mode itself is controlled by a
+  # persistent flash-backed flag and therefore needs no compile-time switch.
   calibration_window_seconds: "5"
   calibration_windows: "12"
 
@@ -70,14 +67,15 @@ esphome:
           id(calibration_target) = 0;
       - if:
           condition:
-            lambda: 'return ${calibration_mode_on_boot};'
+            lambda: 'return !id(initial_setup_completed);'
           then:
+            - deep_sleep.prevent: poolguard_sleep
             - wifi.enable:
             - output.turn_off: a02_power
             - text_sensor.template.publish:
                 id: calibration_status
                 state: "Ready - set water reference and motion profiles"
-            - logger.log: "Calibration mode active; A02 stays off until a calibration action starts"
+            - logger.log: "Initial Setup Mode active; A02 stays off until a measurement or calibration starts"
           else:
             - output.turn_on: a02_power
             - delay: ${detection_burst_duration}
@@ -135,6 +133,20 @@ one_wire:
     id: poolguard_onewire
 
 globals:
+  # Written only when setup is finished or reset. ESPHome preferences are
+  # flash-backed, so this survives deep sleep, resets and full power loss.
+  - id: initial_setup_completed
+    type: bool
+    restore_value: yes
+    initial_value: "false"
+  - id: reset_initial_setup_armed_at
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+  - id: reset_initial_setup_confirmed
+    type: bool
+    restore_value: no
+    initial_value: "false"
   - id: valid_frame_count
     type: int
     restore_value: no
@@ -468,22 +480,97 @@ button:
       - text_sensor.template.publish:
           id: calibration_status
           state: "Motion calibration reset - fallback thresholds active"
-  # This is only a one-time test sleep. calibration_mode_on_boot is compiled
-  # into the firmware, so the next wake returns to calibration mode while it is
-  # true. Permanently leave calibration mode by setting it false and reflashing.
   - platform: template
-    name: "Sleep Once"
+    name: "Finish Initial Setup"
     entity_category: config
     on_press:
-      - output.turn_off: a02_power
-      - text_sensor.template.publish:
-          id: calibration_status
-          state: "Sleeping once - calibration mode remains enabled"
-      - delay: 1s
-      - wifi.disable:
-      - deep_sleep.enter:
-          id: poolguard_sleep
-          sleep_duration: ${sleep_duration}
+      - if:
+          condition:
+            lambda: |-
+              return !id(calibration_active) &&
+                     id(water_reference_distance_cm) > 0.0f &&
+                     id(water_reference_depth_cm) >= 0.0f;
+          then:
+            - script.stop: run_motion_calibration
+            - script.stop: maintenance_measurements
+            - script.stop: evaluate_cycle
+            - output.turn_off: a02_power
+            - lambda: |-
+                const bool motion_complete =
+                    id(calibrated_quiet_cm) >= 0.0f &&
+                    id(calibrated_pump_cm) >= 0.0f &&
+                    id(calibrated_person_cm) >= 0.0f &&
+                    id(calibrated_quiet_cm) < id(calibrated_pump_cm) &&
+                    id(calibrated_pump_cm) < id(calibrated_person_cm);
+                if (!motion_complete) {
+                  ESP_LOGW("poolguard", "Initial setup completed without a full valid motion calibration; fallback or previously learned thresholds remain active");
+                }
+                id(initial_setup_completed) = true;
+            - text_sensor.template.publish:
+                id: calibration_status
+                state: "Initial setup complete - starting battery operation"
+            # Allow the preference write to be committed before sleeping.
+            - delay: 2s
+            - deep_sleep.allow: poolguard_sleep
+            - wifi.disable:
+            - deep_sleep.enter:
+                id: poolguard_sleep
+                sleep_duration: ${sleep_duration}
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(calibration_active);'
+                then:
+                  - text_sensor.template.publish:
+                      id: calibration_status
+                      state: "Finish refused - calibration still running"
+                  - logger.log:
+                      level: WARN
+                      format: "Finish Initial Setup refused: motion calibration is still running"
+                else:
+                  - text_sensor.template.publish:
+                      id: calibration_status
+                      state: "Finish refused - set water reference first"
+                  - logger.log:
+                      level: WARN
+                      format: "Finish Initial Setup refused: valid water reference required"
+
+  - platform: template
+    name: "Reset Initial Setup"
+    entity_category: config
+    on_press:
+      - lambda: |-
+          id(reset_initial_setup_confirmed) = false;
+          if (!id(initial_setup_completed)) {
+            id(reset_initial_setup_armed_at) = 0;
+            id(calibration_status).publish_state("Initial Setup Mode is already active");
+            return;
+          }
+          const uint32_t now = millis();
+          if (id(reset_initial_setup_armed_at) != 0 &&
+              (uint32_t) (now - id(reset_initial_setup_armed_at)) <= 10000) {
+            id(reset_initial_setup_armed_at) = 0;
+            id(reset_initial_setup_confirmed) = true;
+            id(initial_setup_completed) = false;
+          } else {
+            id(reset_initial_setup_armed_at) = now == 0 ? 1 : now;
+            id(calibration_status).publish_state("Press Reset Initial Setup again within 10 seconds");
+            ESP_LOGW("poolguard", "Initial setup reset armed; press again within 10 seconds to confirm");
+          }
+      - if:
+          condition:
+            lambda: 'return id(reset_initial_setup_confirmed);'
+          then:
+            - deep_sleep.prevent: poolguard_sleep
+            - script.stop: maintenance_measurements
+            - script.stop: evaluate_cycle
+            - lambda: 'id(maintenance_active) = false;'
+            - output.turn_off: a02_power
+            - wifi.enable:
+            - text_sensor.template.publish:
+                id: calibration_status
+                state: "Initial setup reset - setup mode active"
+            - logger.log: "Initial setup reset; staying awake with A02 off"
 
 script:
   # Five-second powered measurement bursts are more conservative than leaving
@@ -513,11 +600,19 @@ script:
       - output.turn_off: a02_power
       - component.update: water_temperature
       - delay: 800ms
-      - wifi.disable:
-      - logger.log: "Maintenance Mode disabled; returning to normal deep sleep"
-      - deep_sleep.enter:
-          id: poolguard_sleep
-          sleep_duration: ${sleep_duration}
+      - if:
+          condition:
+            lambda: 'return !id(initial_setup_completed);'
+          then:
+            - deep_sleep.prevent: poolguard_sleep
+            - wifi.enable:
+            - logger.log: "Maintenance Mode disabled; remaining awake in Initial Setup Mode"
+          else:
+            - wifi.disable:
+            - logger.log: "Maintenance Mode disabled; returning to normal deep sleep"
+            - deep_sleep.enter:
+                id: poolguard_sleep
+                sleep_duration: ${sleep_duration}
 
   - id: run_motion_calibration
     mode: single
@@ -798,11 +893,19 @@ script:
             - wifi.enable:
             - script.execute: maintenance_measurements
           else:
-            - output.turn_off: a02_power
-            - wifi.disable:
-            - deep_sleep.enter:
-                id: poolguard_sleep
-                sleep_duration: ${sleep_duration}
+            - if:
+                condition:
+                  lambda: 'return !id(initial_setup_completed);'
+                then:
+                  - output.turn_off: a02_power
+                  - deep_sleep.prevent: poolguard_sleep
+                  - wifi.enable:
+                else:
+                  - output.turn_off: a02_power
+                  - wifi.disable:
+                  - deep_sleep.enter:
+                      id: poolguard_sleep
+                      sleep_duration: ${sleep_duration}
 
 interval:
   - interval: 20ms
@@ -829,12 +932,12 @@ interval:
             frame.clear();
           }
 
-  # Live water temperature while Wi-Fi/API remain connected in maintenance.
+  # Live water temperature while awake in maintenance or Initial Setup Mode.
   - interval: 30s
     then:
       - if:
           condition:
-            lambda: 'return id(maintenance_active);'
+            lambda: 'return id(maintenance_active) || !id(initial_setup_completed);'
           then:
             - component.update: water_temperature
 
@@ -842,7 +945,8 @@ deep_sleep:
   id: poolguard_sleep
 
 # FIRST WATER-LEVEL CALIBRATION
-# 1. Set calibration_mode_on_boot to true and flash PoolGuard.
+# 1. Flash PoolGuard once. A factory-state device automatically stays awake in
+#    Initial Setup Mode with Wi-Fi/API enabled and the A02 off while idle.
 # 2. Measure the actual current pool-water depth in centimetres.
 # 3. Enter it in Home Assistant under "Reference Water Depth".
 # 4. Press "Set Water Level Reference". PoolGuard stores the current A02
@@ -856,7 +960,7 @@ deep_sleep:
 # Defaults: diameter 5.0 m, maximum depth 120 cm. At 120 cm this is ~23.56 m3.
 #
 # MOTION CALIBRATION
-# In calibration mode run Quiet Water, Pump and Person for ~60 s each. Learned
-# thresholds are based on a trimmed sample span and stored persistently. Set
-# calibration_mode_on_boot back to false and flash again when commissioning is
-# complete.
+# In Initial Setup Mode run Quiet Water, Pump and Person for ~60 s each. Learned
+# thresholds are based on a trimmed sample span and stored persistently. Motion
+# calibration is optional; fallback thresholds remain available. Press "Finish
+# Initial Setup" after saving the water reference. No second flash is required.

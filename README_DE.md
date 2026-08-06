@@ -97,30 +97,46 @@ die in Home Assistant gespeicherte Anforderung kann bei einer späteren normalen
 API-Verbindung erneut übernommen werden.
 
 Der Wartungsmodus wird zur Laufzeit von Home Assistant gesteuert und benötigt
-kein erneutes Flashen. Er ist vom einkompilierten Erstkalibrierungsmodus
-getrennt; die Abfrage seines Helfers erzeugt keine zusätzlichen
-WLAN-Verbindungen während der lokalen Messzyklen im Minutenabstand.
+kein erneutes Flashen. Er bleibt vom Erstinbetriebnahmemodus getrennt; die
+Abfrage seines Helfers erzeugt keine zusätzlichen WLAN-Verbindungen während
+der lokalen Messzyklen im Minutenabstand.
 
-## Erstkalibrierungsmodus
+## Erstinbetriebnahmemodus
 
-Der Erstkalibrierungsmodus wird über `calibration_mode_on_boot` in die Firmware
-einkompiliert. Zum Aktivieren wird der Wert auf `"true"` gesetzt und PoolGuard
-geflasht. Der Modus bleibt über Deep-Sleep-Aufwachzyklen hinweg aktiv, bis die
-Firmware erneut mit `calibration_mode_on_boot: "false"` geflasht wird.
+Beim ersten Start im Werkszustand wechselt PoolGuard automatisch in den
+Erstinbetriebnahmemodus. Das im Flash gespeicherte Flag
+`initial_setup_completed` ist zunächst false. Deshalb bleiben WLAN und die
+Home-Assistant-API aktiv und Deep Sleep wird verhindert. Im Leerlauf bleibt der
+A02 ausgeschaltet und wird nur für eine ausdrücklich gestartete Messung oder
+Kalibrierung versorgt. Der DS18B20 bleibt verfügbar.
 
-Der Home-Assistant-Button **Sleep Once** startet nur einen einzelnen
-Deep-Sleep-Zyklus und dient zum Testen des Aufwachverhaltens. Er beendet oder
-deaktiviert den Erstkalibrierungsmodus nicht dauerhaft. Für die dauerhafte
-Rückkehr zum Normalbetrieb:
+Für die Inbetriebnahme ist nur ein Firmware-Flash nötig:
 
-1. `calibration_mode_on_boot: "false"` setzen.
-2. PoolGuard erneut flashen.
+1. PoolGuard flashen und zu Home Assistant hinzufügen.
+2. Wasserstandsreferenz und sichere Mindestwassertiefe einstellen.
+3. Ruhiges Wasser, Pumpe und Person nach Möglichkeit kalibrieren.
+4. **Finish Initial Setup** drücken.
+
+PoolGuard akzeptiert den Abschluss erst nach einer gültigen
+Wasserstandsreferenz. Eine unvollständige Bewegungskalibrierung ist zulässig;
+PoolGuard protokolliert eine Warnung und verwendet weiterhin die
+Fallback-Grenzwerte. Danach speichert es das Abschluss-Flag im Flash, schaltet
+den A02 aus und beginnt mit dem stromsparenden Normalbetrieb. Jeder spätere
+Start, Reset und Deep-Sleep-Aufwachvorgang beginnt direkt im Normalmodus. Ein
+zweiter Firmware-Flash ist nicht erforderlich.
+
+Für eine erneute Inbetriebnahme **Reset Initial Setup** innerhalb von 10
+Sekunden zweimal drücken. Diese Bestätigung schützt vor versehentlichem
+Zurücksetzen. PoolGuard löscht das dauerhafte Flag sofort, bleibt mit WLAN/API
+wach und lässt den A02 ausgeschaltet, bis eine Messung oder Kalibrierung
+gestartet wird. Vorhandene Kalibrierwerte werden dabei nicht automatisch
+gelöscht.
 
 ## Wasserstands-Referenzkalibrierung
 
 Für den Wasserstand sind keine getrennten „leer“-/„voll“-Referenzpunkte mehr nötig. **Ein einziger bekannter realer Wasserstand reicht.**
 
-Für die Erstinbetriebnahme wird in `esphome/poolguard.yaml` vorübergehend `calibration_mode_on_boot: "true"` gesetzt und der XIAO neu geflasht. Danach:
+Im automatisch gestarteten Erstinbetriebnahmemodus:
 
 1. Die **aktuelle tatsächliche Wassertiefe** im Pool in Zentimetern messen.
 2. Diesen Wert in Home Assistant bei **Reference Water Depth** eintragen.
@@ -136,7 +152,7 @@ In der YAML ist standardmäßig ein runder Pool mit **5,0 m Durchmesser** und **
 
 Die Erkennung von Pumpe und Badeaktivität hängt stark vom konkreten Skimmer, Pumpendurchfluss, Wasserstand und der Poolgeometrie ab. Deshalb enthält PoolGuard einen geführten Kalibriermodus.
 
-Im Kalibriermodus werden diese drei Buttons nacheinander ausgeführt:
+Im Erstinbetriebnahmemodus werden diese drei Buttons nach Möglichkeit nacheinander ausgeführt:
 
 1. **Calibrate Quiet Water** – Pumpe aus, niemand im Pool.
 2. **Calibrate Pump** – Umwälzpumpe an, niemand im Pool.
@@ -144,7 +160,10 @@ Im Kalibriermodus werden diese drei Buttons nacheinander ausgeführt:
 
 Jede Phase misst ungefähr 60 Sekunden und speichert den Median der Wasserbewegung. Die Bewegung wird aus einer getrimmten Messwert-Spanne berechnet, damit einzelne Ausreißer oder Spritzer weniger Einfluss haben als bei einem einfachen Min/Max-Wert. Liegen die Profile eindeutig in der Reihenfolge `ruhig < Pumpe < Person`, berechnet PoolGuard automatisch die Grenzwerte. Überlappen sich die Profile, bleiben die bisherigen beziehungsweise Fallback-Grenzwerte aktiv.
 
-Nach Wasserstands- und Bewegungs-Kalibrierung wird PoolGuard gemäß der Anleitung zum Erstkalibrierungsmodus oben wieder für den stromsparenden Normalbetrieb geflasht.
+Die Bewegungskalibrierung ist für den Abschluss der Erstinbetriebnahme optional.
+Falls sie nicht möglich ist, protokolliert PoolGuard eine Warnung und verwendet
+die Fallback-Grenzwerte. Nach der Kalibrierung startet **Finish Initial Setup**
+den stromsparenden Normalbetrieb.
 
 > **Wichtig:** PoolGuard erkennt keine Person direkt. Er klassifiziert die Bewegung der Wasseroberfläche. Pumpen- und Badeaktivitätserkennung sind deshalb experimentelle Hinweise und dürfen nicht als Sicherheitssystem oder Ersatz für Poolaufsicht verwendet werden.
 
@@ -169,11 +188,11 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/). Ich drucke
 2. `esphome/secrets.example.yaml` als Vorlage für die eigenen ESPHome-Secrets verwenden. PoolGuard verwendet die gerätespezifischen Namen `poolguard_api_encryption_key` und `poolguard_ota_password`; die WLAN-Secrets können gemeinsam genutzt werden.
 3. Pins, Poolgeometrie und Kalibrierwerte in `esphome/poolguard.yaml` prüfen.
 4. XIAO ESP32-C3 zunächst per USB flashen.
-5. `calibration_mode_on_boot: "true"` setzen und die Kalibrier-Version flashen.
+5. PoolGuard beim automatischen ersten Start zu Home Assistant hinzufügen.
 6. Reale Wassertiefe messen, bei **Reference Water Depth** eintragen und **Set Water Level Reference** drücken.
 7. **Minimum Safe Water Depth** für den realen Skimmer/Pumpenbetrieb festlegen.
-8. Kalibrierung für ruhiges Wasser, Pumpe und Badeaktivität durchführen.
-9. `calibration_mode_on_boot` wieder auf `false` setzen und die stromsparende Normalversion flashen.
+8. Kalibrierung für ruhiges Wasser, Pumpe und Badeaktivität nach Möglichkeit durchführen.
+9. **Finish Initial Setup** drücken. PoolGuard speichert den Abschluss und startet den stromsparenden Normalbetrieb; ein zweiter Flash ist nicht erforderlich.
 
 ## Sicherheit
 

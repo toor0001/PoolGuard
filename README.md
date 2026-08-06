@@ -93,29 +93,42 @@ battery-saving operation is the fail-safe default, while the retained HA helper
 request can be accepted again at a later normal API connection.
 
 Maintenance Mode is a runtime Home Assistant control and does not require
-reflashing. It remains distinct from the compile-time initial calibration mode,
-and checking its helper does not add Wi-Fi connections to the one-minute local
-measurement cycle.
+reflashing. It remains distinct from Initial Setup Mode, and checking its helper
+does not add Wi-Fi connections to the one-minute local measurement cycle.
 
-## Initial calibration mode
+## Initial Setup Mode
 
-Initial calibration mode is compiled into the firmware through
-`calibration_mode_on_boot`. Set it to `"true"` and flash PoolGuard to enable it.
-It remains enabled across deep-sleep wakeups until the firmware is flashed again
-with `calibration_mode_on_boot: "false"`.
+On the first boot in factory state, PoolGuard automatically enters Initial Setup
+Mode. A flash-backed `initial_setup_completed` flag defaults to false, so Wi-Fi
+and the Home Assistant API remain enabled and deep sleep is prevented. The A02
+stays powered off while idle; it is powered only for an explicit measurement or
+calibration action. The DS18B20 remains available.
 
-The Home Assistant button **Sleep Once** only enters deep sleep for one cycle
-and is useful for testing wake behavior. It does not finish or permanently
-disable initial calibration mode. To return permanently to normal operation:
+Commissioning requires only one firmware flash:
 
-1. Set `calibration_mode_on_boot: "false"`.
-2. Flash PoolGuard again.
+1. Flash PoolGuard and add it to Home Assistant.
+2. Set the water-level reference and minimum safe water depth.
+3. Calibrate Quiet Water, Pump and Person if possible.
+4. Press **Finish Initial Setup**.
+
+PoolGuard requires a valid water-level reference before it accepts the finish
+command. Incomplete motion calibration is allowed; a warning is logged and the
+fallback thresholds remain active. The completion flag is then saved to flash,
+the A02 is switched off, and normal battery-saving operation begins. Every later
+power-up, reset and deep-sleep wake starts directly in normal mode. No second
+flash is required.
+
+To commission the device again, press **Reset Initial Setup** twice within 10
+seconds. This confirmation protects against an accidental press. PoolGuard
+immediately clears the persistent flag, stays awake with Wi-Fi/API enabled, and
+keeps the A02 off until a measurement or calibration is requested. Existing
+calibration values are not erased automatically.
 
 ## Water-level reference calibration
 
 PoolGuard no longer requires separate "empty" and "full" distance calibration points. One known real water depth is enough.
 
-For initial commissioning, temporarily set `calibration_mode_on_boot: "true"` in `esphome/poolguard.yaml` and flash the XIAO. Then:
+During the automatically entered Initial Setup Mode:
 
 1. Measure the **actual current water depth** in the pool in centimetres.
 2. Enter this value in the Home Assistant number entity **Reference Water Depth**.
@@ -131,7 +144,7 @@ The default geometry in the YAML is a round pool with **5.0 m diameter** and **1
 
 Pump and pool-activity detection depend heavily on the actual skimmer, pump flow, water level and pool geometry. PoolGuard therefore includes guided calibration instead of relying only on fixed thresholds.
 
-In calibration mode run these three buttons in order:
+In Initial Setup Mode, run these three buttons in order if possible:
 
 1. **Calibrate Quiet Water** – pump off and nobody in the pool.
 2. **Calibrate Pump** – circulation pump running, nobody in the pool.
@@ -139,7 +152,10 @@ In calibration mode run these three buttons in order:
 
 Each phase measures about 60 seconds and stores the median motion profile. Motion is evaluated from a trimmed sample span so single outliers or splashes have less influence than a raw min/max range. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically calculates the pump and person/activity thresholds. If they overlap, the previous or fallback thresholds remain active.
 
-After water-level and motion calibration, follow the initial calibration mode instructions above to flash PoolGuard back into normal battery-saving operation.
+Motion calibration is optional for finishing initial setup. If it cannot be
+completed, PoolGuard logs a warning and continues with its fallback thresholds.
+After calibration, press **Finish Initial Setup** to begin normal battery-saving
+operation.
 
 > **Important:** PoolGuard does not detect a person directly. It classifies water-surface motion. Pump/activity detection is therefore an experimental indication and must not be used as a safety system or substitute for pool supervision.
 
@@ -164,11 +180,11 @@ The current printable files are available in [`3D-Files/`](3D-Files/). I use a B
 2. Use `esphome/secrets.example.yaml` as a template for your own ESPHome secrets. PoolGuard uses the device-specific `poolguard_api_encryption_key` and `poolguard_ota_password` names; Wi-Fi secrets may be shared.
 3. Review pins, pool geometry and calibration values in `esphome/poolguard.yaml`.
 4. Flash the XIAO ESP32-C3 via USB.
-5. Set `calibration_mode_on_boot: "true"` and flash the commissioning configuration.
+5. On the automatic first boot, add PoolGuard to Home Assistant.
 6. Measure the real water depth, enter **Reference Water Depth** and press **Set Water Level Reference**.
 7. Set **Minimum Safe Water Depth** for the real skimmer/pump installation.
-8. Run the quiet-water, pump and person/activity calibration.
-9. Set `calibration_mode_on_boot` back to `false` and flash the normal low-power configuration.
+8. Run the quiet-water, pump and person/activity calibration if possible.
+9. Press **Finish Initial Setup**. PoolGuard stores completion and starts normal low-power operation; no second flash is required.
 
 ## Safety
 
