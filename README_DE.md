@@ -96,6 +96,26 @@ wiederhergestellt: Der stromsparende Betrieb ist die sichere Voreinstellung;
 die in Home Assistant gespeicherte Anforderung kann bei einer späteren normalen
 API-Verbindung erneut übernommen werden.
 
+Der Wartungsmodus wird zur Laufzeit von Home Assistant gesteuert und benötigt
+kein erneutes Flashen. Er ist vom einkompilierten Erstkalibrierungsmodus
+getrennt; die Abfrage seines Helfers erzeugt keine zusätzlichen
+WLAN-Verbindungen während der lokalen Messzyklen im Minutenabstand.
+
+## Erstkalibrierungsmodus
+
+Der Erstkalibrierungsmodus wird über `calibration_mode_on_boot` in die Firmware
+einkompiliert. Zum Aktivieren wird der Wert auf `"true"` gesetzt und PoolGuard
+geflasht. Der Modus bleibt über Deep-Sleep-Aufwachzyklen hinweg aktiv, bis die
+Firmware erneut mit `calibration_mode_on_boot: "false"` geflasht wird.
+
+Der Home-Assistant-Button **Sleep Once** startet nur einen einzelnen
+Deep-Sleep-Zyklus und dient zum Testen des Aufwachverhaltens. Er beendet oder
+deaktiviert den Erstkalibrierungsmodus nicht dauerhaft. Für die dauerhafte
+Rückkehr zum Normalbetrieb:
+
+1. `calibration_mode_on_boot: "false"` setzen.
+2. PoolGuard erneut flashen.
+
 ## Wasserstands-Referenzkalibrierung
 
 Für den Wasserstand sind keine getrennten „leer“-/„voll“-Referenzpunkte mehr nötig. **Ein einziger bekannter realer Wasserstand reicht.**
@@ -124,7 +144,7 @@ Im Kalibriermodus werden diese drei Buttons nacheinander ausgeführt:
 
 Jede Phase misst ungefähr 60 Sekunden und speichert den Median der Wasserbewegung. Die Bewegung wird aus einer getrimmten Messwert-Spanne berechnet, damit einzelne Ausreißer oder Spritzer weniger Einfluss haben als bei einem einfachen Min/Max-Wert. Liegen die Profile eindeutig in der Reihenfolge `ruhig < Pumpe < Person`, berechnet PoolGuard automatisch die Grenzwerte. Überlappen sich die Profile, bleiben die bisherigen beziehungsweise Fallback-Grenzwerte aktiv.
 
-Nach Wasserstands- und Bewegungs-Kalibrierung wird `calibration_mode_on_boot` wieder auf `false` gesetzt und PoolGuard erneut geflasht. Danach läuft wieder der stromsparende Normalbetrieb.
+Nach Wasserstands- und Bewegungs-Kalibrierung wird PoolGuard gemäß der Anleitung zum Erstkalibrierungsmodus oben wieder für den stromsparenden Normalbetrieb geflasht.
 
 > **Wichtig:** PoolGuard erkennt keine Person direkt. Er klassifiziert die Bewegung der Wasseroberfläche. Pumpen- und Badeaktivitätserkennung sind deshalb experimentelle Hinweise und dürfen nicht als Sicherheitssystem oder Ersatz für Poolaufsicht verwendet werden.
 

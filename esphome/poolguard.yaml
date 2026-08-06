@@ -468,14 +468,17 @@ button:
       - text_sensor.template.publish:
           id: calibration_status
           state: "Motion calibration reset - fallback thresholds active"
+  # This is only a one-time test sleep. calibration_mode_on_boot is compiled
+  # into the firmware, so the next wake returns to calibration mode while it is
+  # true. Permanently leave calibration mode by setting it false and reflashing.
   - platform: template
-    name: "Finish Calibration and Sleep"
+    name: "Sleep Once"
     entity_category: config
     on_press:
       - output.turn_off: a02_power
       - text_sensor.template.publish:
           id: calibration_status
-          state: "Calibration finished"
+          state: "Sleeping once - calibration mode remains enabled"
       - delay: 1s
       - wifi.disable:
       - deep_sleep.enter:
@@ -772,7 +775,7 @@ script:
                   - wait_until:
                       condition:
                         lambda: 'return id(maintenance_mode_request).has_state();'
-                      timeout: 2s
+                      timeout: 5s
                   - delay: 100ms
                   - lambda: |-
                       poolguard_rtc.reported_pump_state = poolguard_rtc.pump_state;

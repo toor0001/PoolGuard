@@ -92,6 +92,25 @@ local active flag is intentionally not restored after an unexpected reset:
 battery-saving operation is the fail-safe default, while the retained HA helper
 request can be accepted again at a later normal API connection.
 
+Maintenance Mode is a runtime Home Assistant control and does not require
+reflashing. It remains distinct from the compile-time initial calibration mode,
+and checking its helper does not add Wi-Fi connections to the one-minute local
+measurement cycle.
+
+## Initial calibration mode
+
+Initial calibration mode is compiled into the firmware through
+`calibration_mode_on_boot`. Set it to `"true"` and flash PoolGuard to enable it.
+It remains enabled across deep-sleep wakeups until the firmware is flashed again
+with `calibration_mode_on_boot: "false"`.
+
+The Home Assistant button **Sleep Once** only enters deep sleep for one cycle
+and is useful for testing wake behavior. It does not finish or permanently
+disable initial calibration mode. To return permanently to normal operation:
+
+1. Set `calibration_mode_on_boot: "false"`.
+2. Flash PoolGuard again.
+
 ## Water-level reference calibration
 
 PoolGuard no longer requires separate "empty" and "full" distance calibration points. One known real water depth is enough.
@@ -120,7 +139,7 @@ In calibration mode run these three buttons in order:
 
 Each phase measures about 60 seconds and stores the median motion profile. Motion is evaluated from a trimmed sample span so single outliers or splashes have less influence than a raw min/max range. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically calculates the pump and person/activity thresholds. If they overlap, the previous or fallback thresholds remain active.
 
-After water-level and motion calibration, set `calibration_mode_on_boot` back to `false` and flash PoolGuard again for normal battery-saving operation.
+After water-level and motion calibration, follow the initial calibration mode instructions above to flash PoolGuard back into normal battery-saving operation.
 
 > **Important:** PoolGuard does not detect a person directly. It classifies water-surface motion. Pump/activity detection is therefore an experimental indication and must not be used as a safety system or substitute for pool supervision.
 
