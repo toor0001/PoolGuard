@@ -87,8 +87,7 @@ esp32:
     type: esp-idf
 
 logger:
-  baud_rate: 0
-  level: INFO
+  level: DEBUG
 
 # Calibration writes are rare, so save learned values immediately rather than
 # risking them being lost if power is removed straight afterwards.
@@ -111,7 +110,7 @@ wifi:
   password: !secret wifi_password
   fast_connect: true
   power_save_mode: HIGH
-  enable_on_boot: false
+  enable_on_boot: true
   reboot_timeout: 0s
 
 output:
