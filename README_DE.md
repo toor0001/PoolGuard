@@ -6,7 +6,7 @@ Deutsch · [English](README.md)
 
 PoolGuard ist ein DIY-Sensormodul für einen **AstralPool-Skimmer mit 17,5 l**. Es misst Wasserstand und Wassertemperatur und wertet zusätzlich die Bewegung der Wasseroberfläche aus. Daraus kann PoolGuard abschätzen, ob die Umwälzpumpe läuft und ob ungewöhnlich starke Wasserbewegung auf Badeaktivität hindeutet.
 
-Der Schwerpunkt liegt auf sehr niedrigem Energieverbrauch: Ein XIAO ESP32-C3 wacht im Normalbetrieb nur kurz auf, der A02YYUW wird über einen Pololu-MOSFET vollständig ein- und ausgeschaltet und WLAN wird nur bei Bedarf verwendet.
+Der Schwerpunkt liegt auf niedrigem Energieverbrauch: Ein XIAO ESP32-C3 wacht im Normalbetrieb nur kurz auf, der A02YYUW wird über einen Pololu-MOSFET vollständig ein- und ausgeschaltet und WLAN wird nur bei Bedarf verwendet.
 
 > **Projektstatus:** Prototyp / in Entwicklung. Pumpen- und Personenerkennung müssen am realen Pool getestet und kalibriert werden.
 
@@ -16,8 +16,7 @@ Der Schwerpunkt liegt auf sehr niedrigem Energieverbrauch: Ein XIAO ESP32-C3 wac
 
 - Abstand zur Wasseroberfläche mit A02YYUW
 - reale Wassertiefe aus einer einzigen Wasserstandsreferenz
-- Wasserstand in Prozent
-- geschätztes Poolvolumen
+- Wasserstand in Prozent und geschätztes Poolvolumen
 - Wassertemperatur mit DS18B20
 - Niedrigwasserwarnung mit Hysterese
 - Erkennung der Umwälzpumpe anhand der Wasserbewegung
@@ -29,10 +28,7 @@ Der Schwerpunkt liegt auf sehr niedrigem Energieverbrauch: Ein XIAO ESP32-C3 wac
 - ereignisgesteuerte WLAN-/API-Verbindung
 - Deep Sleep und vollständiges Abschalten des A02YYUW
 - OTA-Updates im Wach-/Wartungsbetrieb
-
-## Möglichkeiten in Home Assistant
-
-Die Werte können z. B. verwendet werden, um eine Pool-Wärmepumpe abhängig von der Wassertemperatur zu steuern, die Umwälzpumpe bei zu niedrigem Wasserstand abzuschalten, eine Niedrigwasserwarnung zu senden, eine UV-C-Lampe nur bei erkannter Umwälzung zu betreiben oder Wasserstand und Poolvolumen im Dashboard darzustellen.
+- Status-Heartbeat für eine externe Home-Assistant-Ausfallüberwachung
 
 ## Hardware
 
@@ -51,7 +47,7 @@ Die Werte können z. B. verwendet werden, um eine Pool-Wärmepumpe abhängig von
 
 ## Pinbelegung
 
-Die aktuelle Firmware verwendet bewusst keine ESP32-C3-Strapping-Pins GPIO2, GPIO8 oder GPIO9.
+Die Firmware verwendet bewusst keine ESP32-C3-Strapping-Pins GPIO2, GPIO8 oder GPIO9.
 
 | Funktion | XIAO ESP32-C3 |
 |---|---|
@@ -61,8 +57,6 @@ Die aktuelle Firmware verwendet bewusst keine ESP32-C3-Strapping-Pins GPIO2, GPI
 | GPIO3 | frei |
 
 Der DS18B20 benötigt einen **4,7-kΩ-Pull-up zwischen DATA und 3,3 V**.
-
-### A02YYUW über Pololu 2810
 
 ```text
 XIAO 3.3 V  -------- VIN   Pololu 2810
@@ -74,7 +68,7 @@ A02YYUW TX  -------- GPIO20 / D7
 A02YYUW RX  -------- nicht anschließen
 ```
 
-Pololu `ON` ist active-high. Im Deep Sleep bleibt der GPIO nicht aktiv und der A02YYUW ist stromlos.
+Pololu `ON` ist active-high. Im Deep Sleep bleibt der A02YYUW stromlos.
 
 ## Normalbetrieb und Stromsparen
 
@@ -86,23 +80,23 @@ detection_burst_duration: 5s
 status_every_wakes: "30"
 ```
 
-Nach abgeschlossenem Setup wacht PoolGuard ungefähr einmal pro Minute auf. Der A02YYUW wird eingeschaltet, sammelt während des Messbursts Messwerte und wird anschließend sofort wieder abgeschaltet. Für die normalen lokalen Messungen ist keine dauerhafte WLAN-Verbindung nötig.
+Nach abgeschlossenem Setup wacht PoolGuard ungefähr einmal pro Minute auf. Der A02YYUW wird eingeschaltet, sammelt während des Messbursts Messwerte und wird anschließend sofort wieder abgeschaltet. Die Auswertung von Wasserstand, Niedrigwasser, Pumpenstatus und Badeaktivität erfolgt lokal, ohne dafür jedes Mal WLAN zu aktivieren.
 
-PoolGuard verbindet sich mit WLAN/Home Assistant, wenn sich ein relevanter Zustand ändert – Pumpe, Badeaktivität oder Niedrigwasser – oder wenn der regelmäßige Statusbericht fällig ist. Der Statusbericht erfolgt standardmäßig nach ungefähr 30 Wake-Zyklen. Dabei wird auch die Wassertemperatur aktualisiert.
+Ändert sich **Pumpe**, **Bade-/Personenaktivität** oder **Niedrigwasserstatus**, verbindet sich PoolGuard beim betreffenden Messzyklus mit WLAN/Home Assistant und meldet die Änderung. Ohne Zustandsänderung erfolgt der reguläre Statusbericht standardmäßig nach etwa **30 Wake-Zyklen**, also ungefähr alle 30 Minuten. Dabei wird auch die Wassertemperatur aktualisiert.
 
 Die letzten Zustände und Zähler werden im RTC-Speicher über Deep Sleep hinweg gehalten. Schlägt eine WLAN-/API-Verbindung fehl, bleibt eine Zustandsänderung offen und wird bei einem späteren Wake erneut übertragen.
 
 ### Messburst und Akkulaufzeit
 
-`detection_burst_duration` ist der wichtigste Parameter für den Kompromiss zwischen Erkennungsqualität und Akkulaufzeit:
+`detection_burst_duration` bestimmt den Kompromiss zwischen Erkennungsqualität und Akkulaufzeit:
 
 ```yaml
 detection_burst_duration: 5s
 ```
 
-Ein längerer Burst liefert mehr A02-Messwerte und kann die Bewegungsanalyse robuster machen, hält ESP und Sensor aber länger aktiv. **5 Sekunden sind ein konservativer Ausgangswert für Inbetriebnahme und Tests.** Nach realen Tests am Pool können z. B. **2 s oder 1,5 s** ausprobiert werden. Das kann die Akkulaufzeit erheblich verbessern.
+Ein längerer Burst liefert mehr A02-Messwerte, hält ESP und Sensor aber länger aktiv. **5 Sekunden sind ein konservativer Ausgangswert für Inbetriebnahme und Tests.** Nach realen Tests am Pool können z. B. **2 s oder 1,5 s** ausprobiert werden. Die Firmware benötigt für einen gültigen normalen Zyklus mindestens fünf gültige A02-Frames, deshalb sollten kürzere Bursts erst praktisch geprüft werden.
 
-Wichtig: Die Firmware benötigt für einen gültigen normalen Zyklus mindestens fünf gültige A02-Frames. Deshalb sollte ein kürzerer Burst erst nach praktischer Prüfung verwendet werden.
+Auch der komplette Wake-Zyklus kann später vergrößert werden, z. B. auf ungefähr zwei Minuten. Dann reduziert sich die Zahl der Messbursts deutlich; Zustandsänderungen können entsprechend erst beim nächsten Wake erkannt werden. Wird der Wake-Abstand verändert, sollte `status_every_wakes` so angepasst werden, dass der gewünschte regelmäßige Statusabstand – derzeit etwa 30 Minuten – erhalten bleibt.
 
 Die geführte Bewegungs-Kalibrierung ist davon getrennt und verwendet weiterhin eigene 5-Sekunden-Fenster.
 
@@ -110,137 +104,94 @@ Die geführte Bewegungs-Kalibrierung ist davon getrennt und verwendet weiterhin 
 
 Der A02YYUW sendet UART-Frames mit Prüfsumme. PoolGuard akzeptiert nur gültige Frames und plausible Entfernungen von 30 bis 4500 mm. Für einen normalen Zyklus werden mindestens fünf gültige Frames benötigt.
 
-Für die Entfernung wird der **Median** der Messwerte verwendet. Die Wasserbewegung wird nicht aus dem extremen Min/Max-Abstand berechnet, sondern aus dem Bereich zwischen ungefähr dem 10. und 90. Perzentil. Dadurch haben einzelne Ausreißer oder Spritzer weniger Einfluss.
+Für die Entfernung wird der **Median** verwendet. Die Wasserbewegung wird aus dem Bereich zwischen ungefähr dem 10. und 90. Perzentil berechnet, nicht aus einem empfindlichen Roh-Min/Max-Wert. Einzelne Ausreißer oder Spritzer haben dadurch weniger Einfluss.
 
-## Wasserstandsberechnung
+## Wasserstand, Poolvolumen und Niedrigwasser
 
-PoolGuard benötigt keine getrennte Leer-/Voll-Kalibrierung. Eine einzige bekannte reale Wassertiefe reicht.
+Eine einzige bekannte reale Wassertiefe reicht als Referenz. Bei **Set Water Level Reference** speichert PoolGuard gleichzeitig den aktuellen A02-Abstand und die tatsächlich gemessene Wassertiefe. Spätere Änderungen des Sensorabstands werden direkt in eine neue Wassertiefe umgerechnet.
 
-Bei der Referenzkalibrierung speichert PoolGuard gleichzeitig:
-
-- den aktuellen A02-Abstand zur Wasseroberfläche;
-- die tatsächlich gemessene Wassertiefe.
-
-Ändert sich später der Abstand zur Wasseroberfläche, wird daraus direkt die neue Wassertiefe berechnet.
-
-Die Standardgeometrie ist:
+Standardgeometrie:
 
 ```yaml
 pool_diameter_m: "5.0"
 pool_max_depth_cm: "120.0"
-```
-
-`Water Level` ist die aktuelle Tiefe relativ zur konfigurierten Maximaltiefe. `Pool Volume` wird für einen zylindrischen Pool als `π × Radius² × Wassertiefe` geschätzt. Bei 5,0 m Durchmesser und 120 cm Tiefe sind das etwa **23,56 m³**.
-
-Bei Pools mit anderer Geometrie müssen die Werte angepasst werden; bei nicht zylindrischer Bodenform ist das Volumen nur eine Näherung.
-
-## Niedrigwasser-Erkennung
-
-`Minimum Safe Water Depth` ist in Home Assistant ein konfigurierbarer Wert und muss am realen Skimmer bestimmt werden. Standardmäßig ist zusätzlich eine Hysterese von 1 cm vorgesehen:
-
-```yaml
 low_water_hysteresis_cm: "1.0"
 ```
 
-Wird die Mindesttiefe unterschritten, wird `Low Water Level` aktiv. Zurückgesetzt wird der Zustand erst, wenn der Wasserstand wieder mindestens Mindesttiefe + Hysterese erreicht. Das verhindert Flattern direkt am Grenzwert.
+`Water Level` ist die aktuelle Tiefe relativ zur konfigurierten Maximaltiefe. `Pool Volume` wird für einen zylindrischen Pool als `π × Radius² × Wassertiefe` geschätzt; bei 5,0 m Durchmesser und 120 cm Tiefe sind das etwa **23,56 m³**.
+
+`Minimum Safe Water Depth` wird in Home Assistant passend zum realen Skimmer festgelegt. Wird dieser Wert erreicht oder unterschritten, wird `Low Water Level` aktiv. Zurückgesetzt wird der Zustand erst bei Mindesttiefe + Hysterese, damit er am Grenzwert nicht flattert.
 
 ## Initial Setup Mode
 
-Ein neues oder zurückgesetztes Gerät startet automatisch im **Initial Setup Mode**. Es gibt keinen Compile-Time-Schalter und keinen notwendigen zweiten Firmware-Flash mehr.
+Ein neues oder zurückgesetztes Gerät startet automatisch im **Initial Setup Mode**. Der Zustand `initial_setup_completed` liegt persistent im Flash und übersteht Deep Sleep, Reset und vollständigen Stromverlust. Ein zweiter Firmware-Flash zum Verlassen der Erstinbetriebnahme ist nicht nötig.
 
-Der Zustand `initial_setup_completed` wird persistent im Flash gespeichert und übersteht Deep Sleep, Reset und vollständigen Stromverlust.
-
-Solange das Setup nicht abgeschlossen ist:
-
-- wird Deep Sleep verhindert;
-- WLAN/API bleiben verfügbar;
-- der A02YYUW bleibt im Leerlauf ausgeschaltet;
-- Messungen erfolgen nur auf Anforderung oder während einer Kalibrierung;
-- die Wassertemperatur wird im Wachbetrieb regelmäßig aktualisiert.
-
-### Erstinbetriebnahme
-
-1. PoolGuard einmal per USB flashen.
-2. Das Gerät bleibt automatisch im Initial Setup Mode online.
-3. Die tatsächliche aktuelle Wassertiefe in cm messen.
-4. Den Wert bei **Reference Water Depth** eintragen.
-5. **Set Water Level Reference** drücken.
-6. **Minimum Safe Water Depth** für den eigenen Skimmer festlegen.
-7. Optional die drei Bewegungsprofile kalibrieren.
-8. **Finish Initial Setup** drücken.
-
-Danach wird der Setup-Status gespeichert, WLAN abgeschaltet und PoolGuard wechselt in den normalen Deep-Sleep-Betrieb.
-
-`Finish Initial Setup` wird verweigert, solange eine Bewegungs-Kalibrierung läuft oder noch keine gültige Wasserstandsreferenz gespeichert wurde. Eine vollständige Bewegungs-Kalibrierung ist dagegen optional; ohne sie bleiben Fallback-Grenzwerte aktiv.
-
-### Initial Setup zurücksetzen
-
-Der Button **Reset Initial Setup** ist gegen versehentliches Betätigen geschützt. Er muss zweimal innerhalb von 10 Sekunden gedrückt werden. Danach bleibt PoolGuard wieder wach und kann neu eingerichtet werden.
+Solange das Setup nicht abgeschlossen ist, bleibt PoolGuard wach und erreichbar; der A02YYUW bleibt im Leerlauf aus. Die Erstinbetriebnahme besteht im Wesentlichen aus Wasserstandsreferenz, sicherer Mindestwassertiefe und optional den Bewegungsprofilen. Mit **Finish Initial Setup** wird der Zustand gespeichert und PoolGuard wechselt in den normalen Deep-Sleep-Betrieb. **Reset Initial Setup** muss zur Sicherheit zweimal innerhalb von 10 Sekunden gedrückt werden.
 
 ## Geführte Bewegungs-Kalibrierung
 
-Für eine möglichst gute Unterscheidung zwischen ruhigem Wasser, laufender Pumpe und Badeaktivität gibt es drei Kalibrierungen:
+Drei Profile können gelernt werden:
 
 1. **Calibrate Quiet Water** – Pumpe aus, niemand im Pool.
 2. **Calibrate Pump** – Pumpe an, niemand im Pool.
 3. **Calibrate Person** – typische Bade-/Schwimmbewegung.
 
-Standardmäßig werden pro Profil **12 Fenster à 5 Sekunden**, also ungefähr 60 Sekunden, ausgewertet. Jedes Fenster liefert einen robusten Bewegungswert; anschließend wird der Median der gültigen Fenster gespeichert.
-
-Sind die Profile eindeutig `quiet < pump < person`, berechnet PoolGuard automatisch die Grenzwerte jeweils in der Mitte zwischen den Profilen. Überlappen sich die Profile oder liegen sie in falscher Reihenfolge, werden die bisherigen bzw. Fallback-Grenzwerte weiter verwendet.
-
-Fallbacks:
+Standardmäßig werden pro Profil **12 Fenster à 5 Sekunden** ausgewertet. Sind die Profile eindeutig `quiet < pump < person`, berechnet PoolGuard die Pumpen- und Personen-Grenzwerte automatisch zwischen den Profilen. Andernfalls bleiben bisherige oder Fallback-Werte aktiv:
 
 ```yaml
 pump_motion_threshold_cm: "1.5"
 person_motion_threshold_cm: "3.0"
 ```
 
-Mit **Reset Motion Calibration** können die gelernten Profile gelöscht und die Fallback-Grenzwerte wieder aktiviert werden.
+Pumpenbewegung muss standardmäßig zweimal hintereinander bestätigt werden. Personen-/Badeaktivität wird schneller eingeschaltet und erst nach zwei unauffälligen Zyklen wieder gelöscht. Während personentypische Bewegung aktiv ist, wird der Pumpenzustand bewusst gehalten.
 
-## Zustandsstabilisierung
+## Wartungsmodus und OTA
 
-Damit einzelne Messbursts nicht unnötig Zustände umschalten, verwendet PoolGuard Bestätigungszyklen. Standardmäßig muss die Pumpenbewegung zweimal hintereinander bestätigt werden. Personen-/Badeaktivität wird schneller eingeschaltet und erst nach zwei unauffälligen Zyklen wieder gelöscht.
-
-Während personentypische Bewegung erkannt wird, wird der Pumpenzustand bewusst gehalten. Starke Badebewegung soll also nicht fälschlich als Änderung des Pumpenzustands interpretiert werden.
-
-## Wartungsmodus
-
-Für Tests, Diagnose und OTA kann in Home Assistant ein persistenter Helper angelegt werden:
+Für Tests, Diagnose und OTA wird in Home Assistant ein persistenter Helper mit exakt dieser Entity-ID angelegt:
 
 ```text
 input_boolean.poolguard_maintenance_mode
 ```
 
-PoolGuard fragt dafür **nicht jede Minute extra WLAN ab**. Der in Home Assistant gespeicherte Wunsch wird bei der nächsten ohnehin stattfindenden API-Verbindung übertragen. Dadurch bleibt der normale Batteriebetrieb sparsam; die Aktivierung kann entsprechend bis zum nächsten regulären Status-/Ereignisbericht dauern.
+PoolGuard aktiviert WLAN **nicht bei jedem Wake nur zum Prüfen dieses Helpers**. Home Assistant speichert den Wunsch; PoolGuard übernimmt ihn bei der nächsten ohnehin stattfindenden API-Verbindung. Im Wartungsmodus bleibt PoolGuard wach und führt fortlaufend Messbursts durch. Beim Ausschalten kehrt er – sofern das Initial Setup abgeschlossen ist – in Deep Sleep zurück.
 
-Ist der Wartungsmodus aktiv, bleibt PoolGuard wach und führt fortlaufend Messbursts durch. Wird der Helper wieder ausgeschaltet, beendet PoolGuard den Wartungsbetrieb und kehrt – sofern das Initial Setup abgeschlossen ist – in Deep Sleep zurück.
+Für OTA sollte zuerst der Wartungsmodus aktiviert werden, damit PoolGuard während des Updates wach und erreichbar bleibt.
 
-Da Home Assistant den gewünschten Zustand persistent hält, kann ein Wartungswunsch auch dann gesetzt werden, wenn PoolGuard gerade schläft.
+## Akkuüberwachung ohne ADC: Status Heartbeat
 
-## OTA
+PoolGuard misst bewusst **keine Akkuspannung**. Es gibt keinen Spannungsteiler und keinen Battery-Level-Sensor. Für den eigentlichen Zweck – erkennen, dass der Akku leer ist oder das Gerät nicht mehr meldet – ist eine externe Überwachung in Home Assistant robuster.
 
-OTA ist über ESPHome eingerichtet. Für ein zuverlässiges OTA-Update sollte PoolGuard zunächst über den Wartungsmodus wach und online gehalten werden. Bei der Erstinbetriebnahme ist OTA ebenfalls möglich, weil der Initial Setup Mode das Gerät wach hält.
+Dafür stellt die Firmware den Diagnosewert **Status Heartbeat** bereit. Er wird bei einer erfolgreichen WLAN/API-Meldung aktualisiert. Ohne Ereignisse geschieht das spätestens beim regulären Statusbericht, standardmäßig etwa alle 30 Minuten. Zustandsänderungen können zusätzliche Lebenszeichen erzeugen.
+
+Die Benachrichtigung selbst gehört **nicht in ESPHome**, denn ein PoolGuard mit leerem Akku kann keine Warnung mehr senden. Home Assistant überwacht deshalb das Ausbleiben des Heartbeats. Empfohlen ist eine großzügige Schwelle, z. B. **2 Stunden**. Damit führen einzelne WLAN-Aussetzer nicht sofort zu einem Alarm.
+
+Eine robuste HA-Variante verwendet einen Helper `input_datetime.poolguard_last_seen`: Eine Automation aktualisiert ihn immer dann, wenn `sensor.poolguard_status_heartbeat` einen gültigen Wert liefert; eine zweite Automation prüft, ob dieser Zeitstempel älter als zwei Stunden ist und sendet dann eine Benachrichtigung. `unknown` und `unavailable` sollten beim Aktualisieren des Last-Seen-Helpers ignoriert werden, weil PoolGuard im normalen Deep-Sleep-Betrieb zwischen den Verbindungen absichtlich offline ist.
+
+Beispiel für das Aktualisieren des Helpers:
+
+```yaml
+alias: PoolGuard - Lebenszeichen speichern
+trigger:
+  - platform: state
+    entity_id: sensor.poolguard_status_heartbeat
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state.state not in ['unknown', 'unavailable', 'none'] }}
+action:
+  - service: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.poolguard_last_seen
+    data:
+      timestamp: "{{ now().timestamp() }}"
+mode: queued
+```
+
+Die eigentliche Warn-Automation kann anschließend z. B. alle 15 Minuten prüfen, ob `poolguard_last_seen` mehr als zwei Stunden zurückliegt. Damit werden leerer Akku, WLAN-Ausfall oder ein hängen gebliebenes Gerät gleichermaßen erkannt.
 
 ## Home-Assistant-Entitäten
 
-Wichtige Messwerte und Zustände sind:
-
-- **Water Temperature**
-- **Distance to Water**
-- **Water Depth**
-- **Water Level**
-- **Pool Volume**
-- **Water Surface Motion**
-- **Pump Detected**
-- **Person Detected**
-- **Low Water Level**
-- **WiFi Signal**
-- **Calibration Status**
-
-Diagnosewerte zeigen außerdem die drei gelernten Bewegungsprofile und die aktuell verwendeten Pumpen-/Personen-Grenzwerte.
-
-Konfigurations-/Bedienelemente umfassen **Reference Water Depth**, **Minimum Safe Water Depth**, **Measure Now**, die Wasserstandsreferenz, die drei Bewegungs-Kalibrierungen, **Reset Motion Calibration**, **Finish Initial Setup** und **Reset Initial Setup**.
+Wichtige Werte und Zustände sind **Water Temperature**, **Distance to Water**, **Water Depth**, **Water Level**, **Pool Volume**, **Water Surface Motion**, **Pump Detected**, **Person Detected**, **Low Water Level**, **Status Heartbeat**, **WiFi Signal** und **Calibration Status**. Diagnosewerte zeigen außerdem die gelernten Bewegungsprofile und die aktuell verwendeten Grenzwerte.
 
 ## Mechanisches Konzept
 
