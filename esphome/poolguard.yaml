@@ -101,11 +101,11 @@ api:
   id: poolguard_api
   reboot_timeout: 0s
   encryption:
-    key: !secret api_encryption_key
+    key: !secret poolguard_api_encryption_key
 
 ota:
   - platform: esphome
-    password: !secret ota_password
+    password: !secret poolguard_ota_password
 
 wifi:
   id: poolguard_wifi

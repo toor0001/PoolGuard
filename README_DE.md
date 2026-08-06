@@ -166,7 +166,7 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/). Ich drucke
 ## Schnellstart
 
 1. Aktuelle Dateien aus `3D-Files/` herunterladen und drucken.
-2. `esphome/secrets.example.yaml` als Vorlage für die eigenen ESPHome-Secrets verwenden.
+2. `esphome/secrets.example.yaml` als Vorlage für die eigenen ESPHome-Secrets verwenden. PoolGuard verwendet die gerätespezifischen Namen `poolguard_api_encryption_key` und `poolguard_ota_password`; die WLAN-Secrets können gemeinsam genutzt werden.
 3. Pins, Poolgeometrie und Kalibrierwerte in `esphome/poolguard.yaml` prüfen.
 4. XIAO ESP32-C3 zunächst per USB flashen.
 5. `calibration_mode_on_boot: "true"` setzen und die Kalibrier-Version flashen.

@@ -161,7 +161,7 @@ The current printable files are available in [`3D-Files/`](3D-Files/). I use a B
 ## Quick start
 
 1. Download and print the current files from `3D-Files/`.
-2. Use `esphome/secrets.example.yaml` as a template for your own ESPHome secrets.
+2. Use `esphome/secrets.example.yaml` as a template for your own ESPHome secrets. PoolGuard uses the device-specific `poolguard_api_encryption_key` and `poolguard_ota_password` names; Wi-Fi secrets may be shared.
 3. Review pins, pool geometry and calibration values in `esphome/poolguard.yaml`.
 4. Flash the XIAO ESP32-C3 via USB.
 5. Set `calibration_mode_on_boot: "true"` and flash the commissioning configuration.
