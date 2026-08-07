@@ -7,6 +7,7 @@
 // write flash on every deep-sleep cycle. A full power loss resets this state.
 struct PoolGuardRtcState {
   uint32_t magic;
+  uint32_t report_sequence;
   uint16_t wake_count;
 
   int8_t pump_state;
@@ -22,5 +23,5 @@ struct PoolGuardRtcState {
   uint8_t person_off_streak;
 };
 
-static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D32;  // "PGM2"
+static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D33;  // "PGM3"
 RTC_DATA_ATTR inline PoolGuardRtcState poolguard_rtc{};
