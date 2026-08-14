@@ -118,6 +118,13 @@ operating state.
   <em>PoolGuard in Home Assistant: Even while <code>Sleeping / Offline</code>, the last successfully transmitted measurements remain available. The device status deliberately indicates the deep-sleep state.</em>
 </p>
 
+### Lovelace dashboard
+
+<p align="center">
+  <img src="images/IMG_5329.png" alt="PoolGuard Lovelace dashboard with water level, temperature and status tiles" width="52%"><br>
+  <em>PoolGuard Lovelace dashboard with water level, water temperature, device status, circulation-pump state and person/activity detection.</em>
+</p>
+
 **Status Heartbeat** changes only after a complete successful report. Its Home
 Assistant `last_updated` metadata is the **Last Successful Report** time and
 shows the age of retained measurements without an ESP timestamp or flash write.
