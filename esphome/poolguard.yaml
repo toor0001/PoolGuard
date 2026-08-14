@@ -9,14 +9,13 @@ substitutions:
   a02_trigger_pin: GPIO3
   one_wire_pin: GPIO5
 
-  # Normal low-power operation: one local motion check about once per minute.
-  sleep_duration: 55s
+  # Normal low-power operation. The desired wake-to-wake period and periodic
+  # report cadence are persistent Home Assistant numbers defined below.
   detection_burst_duration: 5s
   a02_startup_duration: 200ms
   a02_trigger_low_duration: 2ms
   a02_trigger_interval_rest: 78ms
   a02_frame_wait_after_triggers: 70ms
-  status_every_wakes: "30"
 
   # Motion-calibration sampling. Initial Setup Mode itself is controlled by a
   # persistent flash-backed flag and therefore needs no compile-time switch.
@@ -68,7 +67,7 @@ esphome:
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
           id(report_needed) = false;
-          id(status_report_due) = (poolguard_rtc.wake_count >= ${status_every_wakes});
+          id(status_report_due) = false;
           id(calibration_active) = false;
           id(calibration_target) = 0;
       # Controlled-UART RX idles high. The A02 is still unpowered here, so the
@@ -82,10 +81,16 @@ esphome:
             - wifi.enable:
             - output.turn_off: a02_power
             - text_sensor.template.publish:
+                id: poolguard_status
+                state: "Initial Setup"
+            - text_sensor.template.publish:
                 id: calibration_status
                 state: "Ready - set water reference and motion profiles"
             - logger.log: "Initial Setup Mode active; A02 stays off until a measurement or calibration starts"
           else:
+            - text_sensor.template.publish:
+                id: poolguard_status
+                state: "Measuring"
             - script.execute: start_a02_measurements
             - script.wait: start_a02_measurements
             - delay: ${detection_burst_duration}
@@ -250,6 +255,32 @@ globals:
     initial_value: "-1.0"
 
 number:
+  # Persistent user settings are written only when changed. Measurement
+  # values and the RTC wake counter are never copied to flash each wake.
+  - platform: template
+    id: measurement_interval_minutes
+    name: "Measurement Interval"
+    unit_of_measurement: min
+    min_value: 1
+    max_value: 15
+    step: 1
+    initial_value: 2
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
+  - platform: template
+    id: periodic_report_every_wakes
+    name: "Periodic Report Every"
+    unit_of_measurement: wakes
+    min_value: 1
+    max_value: 120
+    step: 1
+    initial_value: 30
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
   # FIRST WATER-LEVEL CALIBRATION:
   # Measure the actual pool-water depth, enter it here and then press
   # "Set Water Level Reference" while the water remains at that level.
@@ -398,6 +429,11 @@ sensor:
 
 text_sensor:
   - platform: template
+    id: poolguard_status
+    name: "PoolGuard Status"
+    entity_category: diagnostic
+
+  - platform: template
     id: calibration_status
     name: "Calibration Status"
     entity_category: diagnostic
@@ -422,6 +458,9 @@ binary_sensor:
             then:
               - lambda: 'id(maintenance_active) = true;'
               - wifi.enable:
+              - text_sensor.template.publish:
+                  id: poolguard_status
+                  state: "Maintenance"
               - script.execute: maintenance_measurements
               - logger.log: "Maintenance Mode enabled by Home Assistant"
             else:
@@ -574,10 +613,7 @@ button:
             # Allow the preference write to be committed before sleeping.
             - delay: 2s
             - deep_sleep.allow: poolguard_sleep
-            - wifi.disable:
-            - deep_sleep.enter:
-                id: poolguard_sleep
-                sleep_duration: ${sleep_duration}
+            - script.execute: enter_low_power_sleep
           else:
             - if:
                 condition:
@@ -638,6 +674,43 @@ button:
             - logger.log: "Initial setup reset; staying awake with A02 off"
 
 script:
+  # One shared sleep path is used everywhere. When the API is connected,
+  # publish the final status and leave the connection intact so ESPHome's deep
+  # sleep component can perform its clean, expected disconnect. Subtracting
+  # active time keeps the wake-to-wake period close to the configured value.
+  - id: enter_low_power_sleep
+    mode: restart
+    then:
+      - output.turn_on: a02_trigger
+      - output.turn_off: a02_power
+      - if:
+          condition:
+            api.connected:
+              state_subscription_only: true
+          then:
+            - text_sensor.template.publish:
+                id: poolguard_status
+                state: "Sleeping / Offline"
+            - delay: 500ms
+      - lambda: |-
+          const float configured_minutes = id(measurement_interval_minutes).state;
+          const uint32_t period_ms =
+              (uint32_t) ((std::isfinite(configured_minutes) ? configured_minutes : 2.0f) * 60000.0f);
+          const uint32_t active_ms = millis();
+          const uint32_t sleep_ms = period_ms > active_ms + 1000U
+              ? period_ms - active_ms : 1000U;
+          ESP_LOGI("poolguard",
+                   "Entering deep sleep: period=%u ms active=%u ms sleep=%u ms",
+                   (unsigned) period_ms, (unsigned) active_ms, (unsigned) sleep_ms);
+      - deep_sleep.enter:
+          id: poolguard_sleep
+          sleep_duration: !lambda |-
+            const float configured_minutes = id(measurement_interval_minutes).state;
+            const uint32_t period_ms =
+                (uint32_t) ((std::isfinite(configured_minutes) ? configured_minutes : 2.0f) * 60000.0f);
+            const uint32_t active_ms = millis();
+            return period_ms > active_ms + 1000U ? period_ms - active_ms : 1000U;
+
   # Shared DYP A02 UART-Controlled measurement sequence. RX idles high. Once
   # sensor power is stable, each high-to-low transition requests one reading.
   - id: start_a02_measurements
@@ -766,11 +839,8 @@ script:
             - wifi.enable:
             - logger.log: "Maintenance Mode disabled; remaining awake in Initial Setup Mode"
           else:
-            - wifi.disable:
             - logger.log: "Maintenance Mode disabled; returning to normal deep sleep"
-            - deep_sleep.enter:
-                id: poolguard_sleep
-                sleep_duration: ${sleep_duration}
+            - script.execute: enter_low_power_sleep
 
   - id: run_motion_calibration
     mode: single
@@ -878,6 +948,11 @@ script:
     then:
       - output.turn_off: a02_power
       - lambda: |-
+          const float configured_report_wakes = id(periodic_report_every_wakes).state;
+          const uint32_t report_wakes = (uint32_t) std::lround(
+              std::isfinite(configured_report_wakes) ? configured_report_wakes : 30.0f);
+          id(status_report_due) = poolguard_rtc.wake_count >= report_wakes;
+
           if (id(valid_frame_count) < 5) {
             ESP_LOGW("poolguard", "Not enough valid A02 frames: %d", id(valid_frame_count));
             id(report_needed) = id(status_report_due);
@@ -1029,6 +1104,13 @@ script:
                       condition:
                         lambda: 'return id(maintenance_mode_request).has_state();'
                       timeout: 5s
+                  - if:
+                      condition:
+                        lambda: 'return !id(maintenance_active);'
+                      then:
+                        - text_sensor.template.publish:
+                            id: poolguard_status
+                            state: "Reporting"
                   - script.execute: publish_report_payload
                   - script.wait: publish_report_payload
                   # Allow the native API send queue to flush before sleeping.
@@ -1072,10 +1154,7 @@ script:
                   - wifi.enable:
                 else:
                   - output.turn_off: a02_power
-                  - wifi.disable:
-                  - deep_sleep.enter:
-                      id: poolguard_sleep
-                      sleep_duration: ${sleep_duration}
+                  - script.execute: enter_low_power_sleep
 
 interval:
   - interval: 20ms
