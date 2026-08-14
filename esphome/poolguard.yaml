@@ -2,15 +2,20 @@ substitutions:
   device_name: poolguard
   friendly_name: PoolGuard
 
-  # XIAO ESP32-C3 pin map: D7=GPIO20, D2=GPIO4, D3=GPIO5.
+  # XIAO ESP32-C3 pin map: D7=GPIO20, D2=GPIO4, D3=GPIO5, D1=GPIO3.
   # None of these are ESP32-C3 strapping pins (GPIO2/GPIO8/GPIO9).
   a02_rx_pin: GPIO20
   a02_power_pin: GPIO4
+  a02_trigger_pin: GPIO3
   one_wire_pin: GPIO5
 
   # Normal low-power operation: one local motion check about once per minute.
   sleep_duration: 55s
   detection_burst_duration: 5s
+  a02_startup_duration: 200ms
+  a02_trigger_low_duration: 2ms
+  a02_trigger_interval_rest: 78ms
+  a02_frame_wait_after_triggers: 70ms
   status_every_wakes: "30"
 
   # Motion-calibration sampling. Initial Setup Mode itself is controlled by a
@@ -66,6 +71,9 @@ esphome:
           id(status_report_due) = (poolguard_rtc.wake_count >= ${status_every_wakes});
           id(calibration_active) = false;
           id(calibration_target) = 0;
+      # Controlled-UART RX idles high. The A02 is still unpowered here, so the
+      # output's transition during boot cannot trigger an ultrasonic reading.
+      - output.turn_on: a02_trigger
       - if:
           condition:
             lambda: 'return !id(initial_setup_completed);'
@@ -78,8 +86,11 @@ esphome:
                 state: "Ready - set water reference and motion profiles"
             - logger.log: "Initial Setup Mode active; A02 stays off until a measurement or calibration starts"
           else:
-            - output.turn_on: a02_power
+            - script.execute: start_a02_measurements
+            - script.wait: start_a02_measurements
             - delay: ${detection_burst_duration}
+            - script.execute: stop_a02_measurements
+            - script.wait: stop_a02_measurements
             - script.execute: evaluate_cycle
 
 esp32:
@@ -120,6 +131,13 @@ output:
     pin: ${a02_power_pin}
     # Pololu ON is active-high. The GPIO output initializes inactive; during
     # reset/sleep the high-impedance pin leaves Pololu ON in its off state.
+
+  - platform: gpio
+    id: a02_trigger
+    pin: ${a02_trigger_pin}
+    # DYP UART-Controlled RX is active on a falling edge. Keep it high whenever
+    # no measurement is requested. The A02 is unpowered during reset and deep
+    # sleep, where this ESP pin may become high-impedance.
 
 uart:
   id: a02_uart
@@ -172,6 +190,14 @@ globals:
     type: bool
     restore_value: no
     initial_value: "false"
+  - id: a02_triggering_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: a02_trigger_count
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
 
   # WATER-LEVEL REFERENCE
   # One known real water depth plus the A02 distance measured at the same moment
@@ -405,8 +431,11 @@ button:
           id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
-      - output.turn_on: a02_power
+      - script.execute: start_a02_measurements
+      - script.wait: start_a02_measurements
       - delay: ${detection_burst_duration}
+      - script.execute: stop_a02_measurements
+      - script.wait: stop_a02_measurements
       - script.execute: evaluate_cycle
 
   # WATER-LEVEL REFERENCE CALIBRATION
@@ -418,11 +447,14 @@ button:
           id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
-      - output.turn_on: a02_power
+      - script.execute: start_a02_measurements
+      - script.wait: start_a02_measurements
       - text_sensor.template.publish:
           id: calibration_status
           state: "Measuring water reference..."
       - delay: 5s
+      - script.execute: stop_a02_measurements
+      - script.wait: stop_a02_measurements
       - lambda: |-
           if (id(valid_frame_count) >= 5) {
             auto distances = id(sample_distances_mm);
@@ -438,7 +470,6 @@ button:
           } else {
             ESP_LOGW("poolguard", "Water reference failed: insufficient A02 frames");
           }
-      - output.turn_off: a02_power
       - if:
           condition:
             lambda: 'return id(valid_frame_count) >= 5;'
@@ -501,6 +532,9 @@ button:
             - script.stop: run_motion_calibration
             - script.stop: maintenance_measurements
             - script.stop: evaluate_cycle
+            - lambda: 'id(a02_triggering_active) = false;'
+            - script.stop: trigger_a02_measurements
+            - output.turn_on: a02_trigger
             - output.turn_off: a02_power
             - lambda: |-
                 const bool motion_complete =
@@ -572,6 +606,9 @@ button:
             - script.stop: maintenance_measurements
             - script.stop: evaluate_cycle
             - lambda: 'id(maintenance_active) = false;'
+            - lambda: 'id(a02_triggering_active) = false;'
+            - script.stop: trigger_a02_measurements
+            - output.turn_on: a02_trigger
             - output.turn_off: a02_power
             - wifi.enable:
             - text_sensor.template.publish:
@@ -580,6 +617,50 @@ button:
             - logger.log: "Initial setup reset; staying awake with A02 off"
 
 script:
+  # Shared DYP A02 UART-Controlled measurement sequence. RX idles high. Once
+  # sensor power is stable, each high-to-low transition requests one reading.
+  - id: start_a02_measurements
+    mode: single
+    then:
+      - output.turn_on: a02_trigger
+      - lambda: |-
+          id(a02_triggering_active) = false;
+          id(a02_trigger_count) = 0;
+      - output.turn_on: a02_power
+      - logger.log: "A02 power ON; waiting for sensor startup"
+      - delay: ${a02_startup_duration}
+      - lambda: 'id(a02_triggering_active) = true;'
+      - script.execute: trigger_a02_measurements
+
+  - id: trigger_a02_measurements
+    mode: single
+    then:
+      - while:
+          condition:
+            lambda: 'return id(a02_triggering_active);'
+          then:
+            - output.turn_off: a02_trigger
+            - delay: ${a02_trigger_low_duration}
+            - output.turn_on: a02_trigger
+            - lambda: |-
+                id(a02_trigger_count)++;
+                if (id(a02_trigger_count) == 1) {
+                  ESP_LOGD("poolguard", "A02 trigger sent; repeated 80 ms triggering active");
+                }
+            - delay: ${a02_trigger_interval_rest}
+
+  - id: stop_a02_measurements
+    mode: single
+    then:
+      - lambda: 'id(a02_triggering_active) = false;'
+      - script.wait: trigger_a02_measurements
+      - output.turn_on: a02_trigger
+      - delay: ${a02_frame_wait_after_triggers}
+      - output.turn_off: a02_power
+      - lambda: |-
+          ESP_LOGD("poolguard", "A02 power OFF; triggers=%u valid_frames=%d",
+                   (unsigned) id(a02_trigger_count), id(valid_frame_count));
+
   # Five-second powered measurement bursts are more conservative than leaving
   # the A02 continuously powered. evaluate_cycle switches Pololu ON off before
   # processing each burst and cannot enter deep sleep while maintenance is on.
@@ -594,8 +675,11 @@ script:
                 id(sample_distances_mm).clear();
                 id(valid_frame_count) = 0;
                 id(a02_frame).clear();
-            - output.turn_on: a02_power
+            - script.execute: start_a02_measurements
+            - script.wait: start_a02_measurements
             - delay: ${detection_burst_duration}
+            - script.execute: stop_a02_measurements
+            - script.wait: stop_a02_measurements
             - script.execute: evaluate_cycle
             - script.wait: evaluate_cycle
 
@@ -604,6 +688,9 @@ script:
     then:
       - script.stop: maintenance_measurements
       - script.stop: evaluate_cycle
+      - lambda: 'id(a02_triggering_active) = false;'
+      - script.stop: trigger_a02_measurements
+      - output.turn_on: a02_trigger
       - output.turn_off: a02_power
       - component.update: water_temperature
       - delay: 800ms
@@ -631,7 +718,8 @@ script:
           id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
           id(a02_frame).clear();
-      - output.turn_on: a02_power
+      - script.execute: start_a02_measurements
+      - script.wait: start_a02_measurements
       - text_sensor.template.publish:
           id: calibration_status
           state: "Motion calibration running - keep condition unchanged"
@@ -653,7 +741,8 @@ script:
                   id(calibration_samples).push_back(
                       (distances[high_index] - distances[low_index]) / 10.0f);
                 }
-      - output.turn_off: a02_power
+      - script.execute: stop_a02_measurements
+      - script.wait: stop_a02_measurements
       - lambda: |-
           auto &samples = id(calibration_samples);
           if (samples.size() < 8) {

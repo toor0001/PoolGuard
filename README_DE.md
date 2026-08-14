@@ -47,7 +47,7 @@ D2 / GPIO4  -------- ON    Pololu 2810
 Pololu VOUT -------- VCC   A02YYUW
 A02YYUW GND -------- GND
 A02YYUW TX  -------- D7 / GPIO20 (UART RX)
-A02YYUW RX  -------- nicht anschließen
+A02YYUW RX  -------- D1 / GPIO3 (Trigger-Ausgang)
 ```
 
 - **D2 / GPIO4 HIGH:** A02YYUW eingeschaltet
@@ -56,8 +56,16 @@ A02YYUW RX  -------- nicht anschließen
 
 Der mechanische Schiebeschalter des Pololu muss auf „off“ stehen, damit ESPHome
 den ON-Pin steuern kann. Die Datenleitung des DS18B20 liegt an D3/GPIO5 und
-benötigt einen 4,7-kΩ-Pull-up nach 3,3 V. D1/GPIO3 ist unbenutzt und frei
-verfügbar.
+benötigt einen 4,7-kΩ-Pull-up nach 3,3 V.
+
+Die aktuelle Firmware unterstützt das DYP-UART-Controlled-Protokoll: GPIO3
+bleibt normalerweise HIGH. Nachdem der Pololu den Sensor eingeschaltet hat,
+sendet der ESP wiederholt fallende Flanken an A02 RX. Nach jedem Trigger bleibt
+genügend Zeit für die Antwort `FF Data_H Data_L Checksum` über A02 TX/GPIO20;
+zwischen den Triggern liegen mehr als 70 ms. Außerhalb eines Messbursts trennt
+der Pololu weiterhin die komplette A02-Versorgung. Die genaue Sensorvariante
+und dieses Controlled-UART-Verhalten müssen am realen Prototyp noch praktisch
+verifiziert werden.
 
 ## Messzyklus und Stromsparbetrieb
 

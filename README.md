@@ -47,7 +47,7 @@ D2 / GPIO4  -------- ON    Pololu 2810
 Pololu VOUT -------- VCC   A02YYUW
 A02YYUW GND -------- GND
 A02YYUW TX  -------- D7 / GPIO20 (UART RX)
-A02YYUW RX  -------- leave unconnected
+A02YYUW RX  -------- D1 / GPIO3 (trigger output)
 ```
 
 - **D2 / GPIO4 HIGH:** A02YYUW powered on
@@ -55,8 +55,15 @@ A02YYUW RX  -------- leave unconnected
 - during deep sleep the A02YYUW remains unpowered
 
 Set the Pololu's physical slide switch to off so ESPHome can control its ON pin.
-The DS18B20 data wire uses D3/GPIO5 with a 4.7 kΩ pull-up to 3.3 V. D1/GPIO3 is
-unused and available.
+The DS18B20 data wire uses D3/GPIO5 with a 4.7 kΩ pull-up to 3.3 V.
+
+The current firmware supports the DYP UART-Controlled protocol: GPIO3 normally
+stays high, and after the Pololu has powered the sensor the ESP sends repeated
+falling edges to A02 RX. Each trigger is followed by enough time for the
+`FF Data_H Data_L Checksum` response on A02 TX/GPIO20, with more than 70 ms
+between triggers. The Pololu still removes the complete A02 supply outside a
+measurement burst. The exact sensor variant and this controlled-UART behaviour
+still need to be verified on the physical prototype.
 
 ## Measurement and low-power operation
 
