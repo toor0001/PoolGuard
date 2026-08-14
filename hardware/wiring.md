@@ -57,6 +57,13 @@ still be confirmed on the physical prototype.
 
 Use the normal three-wire connection rather than parasite power. Fit an external pull-up of about 4.7 kΩ between 3.3 V and the data line. Keep the cable entry sealed and provide strain relief.
 
+In normal battery operation Wi-Fi is disabled at boot. The ESP powers and
+triggers the A02, evaluates the samples locally and returns directly to deep
+sleep unless an event or the 30-wake periodic interval requires a report. Wi-Fi
+is then enabled only for the report and is disabled again before sleep. Initial
+Setup and Maintenance Mode explicitly keep Wi-Fi/API available; OTA is possible
+during those existing online phases but does not cause an additional wake.
+
 ### Antenna
 
 Place the adhesive antenna close to the plastic skimmer lid, away from the 18650 cell, sensor cable and large water-facing surfaces. Do not bend the active antenna area sharply.

@@ -67,9 +67,32 @@ still need to be verified on the physical prototype.
 
 ## Measurement and low-power operation
 
-In normal operation PoolGuard wakes roughly once per minute and performs a short local A02YYUW measurement burst. Wi-Fi remains disabled for these checks. PoolGuard only connects immediately when the detected pump, pool-activity or low-water state changes. Water depth, water-level percentage, estimated pool volume and water temperature are additionally reported approximately every 30 minutes.
+In normal operation PoolGuard wakes roughly once per minute with the Wi-Fi
+interface disabled and performs a short local A02YYUW measurement burst. If no
+report is required, it returns directly to deep sleep without starting the
+radio. Wi-Fi and the Home Assistant API are enabled only for a detected pump,
+pool-activity or low-water state change, or for the periodic report after 30
+wake cycles. A report contains the complete current measurement payload,
+including a fresh corrected water temperature and the persisted calibration
+diagnostics. Wi-Fi is disabled again before deep sleep.
 
-The last reported states are kept in ESP32 RTC memory during deep sleep. If a Wi-Fi/API transmission fails, the state change remains pending and is retried after the next wake-up.
+Home Assistant retains the last successfully reported entity values while
+PoolGuard sleeps; no measurement values are written to ESP flash on every wake.
+The RTC memory holds the wake counter and last reported binary states so failed
+reports remain pending and are retried. If this device was originally added to
+Home Assistant before the firmware contained its `deep_sleep` component, remove
+and re-add the ESPHome device once so Home Assistant learns its expected deep-
+sleep disconnect behavior. The **Status Heartbeat** entity's `last_updated`
+metadata indicates when Home Assistant last received a successful report.
+
+The configurable **Water Temperature Offset** number ranges from -5.0 to
++5.0 °C in 0.1 °C steps and survives full power loss. **Water Temperature** is
+the DS18B20 reading plus this offset; no separate raw-temperature entity is
+exposed.
+
+OTA remains available whenever PoolGuard is already online in Initial Setup,
+Maintenance Mode or a report window. The device does not create additional
+Wi-Fi connections solely for OTA.
 
 ## Maintenance Mode
 
@@ -83,7 +106,7 @@ Turning the helper on is not immediate while PoolGuard sleeps. PoolGuard does
 not connect to Wi-Fi during each one-minute local measurement. It receives the
 retained request the next time the existing event-driven or periodic reporting
 logic connects to the Home Assistant API. With the default 30-wake status
-interval, the worst-case delay is approximately 30 minutes; a state-change
+interval, the worst-case delay is slightly more than 30 minutes; a state-change
 report can activate it earlier.
 
 While Maintenance Mode is active, PoolGuard stays awake with Wi-Fi/API

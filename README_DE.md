@@ -69,9 +69,33 @@ verifiziert werden.
 
 ## Messzyklus und Stromsparbetrieb
 
-Im Normalbetrieb wacht PoolGuard ungefähr einmal pro Minute auf und macht lokal einen kurzen Messburst mit dem A02YYUW. WLAN bleibt dabei ausgeschaltet. Erst wenn sich Pumpenstatus, Badeaktivität oder Niedrigwasserstatus ändern, verbindet sich PoolGuard sofort und meldet den neuen Zustand. Wassertiefe, Wasserstand in Prozent, geschätztes Poolvolumen und Wassertemperatur werden zusätzlich ungefähr alle 30 Minuten übertragen.
+Im Normalbetrieb wacht PoolGuard ungefähr einmal pro Minute mit ausgeschalteter
+WLAN-Schnittstelle auf und führt lokal einen kurzen A02YYUW-Messburst aus. Ist
+kein Report erforderlich, geht das Gerät ohne Funkstart direkt zurück in Deep
+Sleep. WLAN und Home-Assistant-API werden nur bei einer Änderung von Pumpen-,
+Badeaktivitäts- oder Niedrigwasserstatus sowie für den regelmäßigen Report nach
+30 Wake-Zyklen aktiviert. Ein Report enthält den vollständigen aktuellen
+Messdatensatz einschließlich einer frischen korrigierten Wassertemperatur und
+der persistenten Kalibrierdiagnose. Vor Deep Sleep wird WLAN wieder deaktiviert.
 
-Die zuletzt gemeldeten Zustände werden während Deep Sleep im RTC-Speicher gehalten. Schlägt eine WLAN-/API-Übertragung fehl, bleibt die Zustandsänderung offen und wird beim nächsten Aufwachen erneut versucht.
+Home Assistant behält während Deep Sleep die zuletzt erfolgreich gemeldeten
+Entity-Werte. Dafür werden nicht bei jedem Wake Messwerte in den ESP-Flash
+geschrieben. Wake-Zähler und zuletzt gemeldete Binärzustände liegen im RTC-
+Speicher, sodass fehlgeschlagene Reports offen bleiben und erneut versucht
+werden. Wurde das Gerät ursprünglich in Home Assistant hinzugefügt, bevor die
+Firmware die `deep_sleep`-Komponente enthielt, muss das ESPHome-Gerät einmal
+entfernt und neu hinzugefügt werden, damit Home Assistant den erwarteten Deep-
+Sleep-Disconnect kennt. Die `last_updated`-Metadaten von **Status Heartbeat**
+zeigen, wann Home Assistant zuletzt einen erfolgreichen Report empfangen hat.
+
+Die konfigurierbare Number-Entity **Water Temperature Offset** reicht von -5,0
+bis +5,0 °C in 0,1-°C-Schritten und überlebt einen vollständigen Stromverlust.
+**Water Temperature** entspricht dem DS18B20-Messwert plus diesem Offset; eine
+separate Raw-Temperatur-Entity wird nicht bereitgestellt.
+
+OTA steht zur Verfügung, wenn PoolGuard im Initial Setup, Wartungsmodus oder
+während eines Reports ohnehin online ist. Nur für OTA wird keine zusätzliche
+WLAN-Verbindung aufgebaut.
 
 ## Wartungsmodus
 
@@ -86,7 +110,7 @@ sich für die lokalen Messungen im Minutenabstand weiterhin nicht mit dem WLAN.
 Die gespeicherte Anforderung wird erst bei der nächsten ohnehin erforderlichen,
 ereignisgesteuerten oder regelmäßigen Verbindung zur Home-Assistant-API
 übernommen. Beim voreingestellten Statusintervall von 30 Aufwachzyklen beträgt
-die maximale Verzögerung ungefähr 30 Minuten; eine Zustandsänderung kann die
+die maximale Verzögerung etwas mehr als 30 Minuten; eine Zustandsänderung kann die
 Aktivierung früher auslösen.
 
 Im Wartungsmodus bleibt PoolGuard wach und mit WLAN/API verbunden. Etwa alle
