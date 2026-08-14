@@ -1,9 +1,22 @@
-# ESPHome secrets and generated files
+# Local credentials and environment files
 secrets.yaml
+.env
+.env.*
+!.env.example
+credentials.yaml
+credentials.yml
+
+# ESPHome, PlatformIO and generated build files
 *.bin
 *.elf
 *.map
+*.log
 .esphome/
+build/
+.pio/
+.platformio/
+__pycache__/
+*.py[cod]
 
 # CAD / slicer temporary files
 *.bak
@@ -16,5 +29,8 @@ secrets.yaml
 # OS / editor files
 .DS_Store
 Thumbs.db
+*~
+*.swp
+*.swo
 .vscode/
 .idea/

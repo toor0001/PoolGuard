@@ -25,12 +25,12 @@ Mit den Messwerten von PoolGuard lassen sich unter anderem folgende Automationen
 
 | Bauteil | Verwendung | Link |
 |---|---|---|
-| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | [Amazon](https://link.amazon/B0iQQg2zF) |
-| USB-C Breakout-Kabel | Stromversorgung / Anschluss | [Amazon](https://link.amazon/B0eO8jr4N) |
-| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | [Amazon](https://link.amazon/B0dWRfbC4) |
-| Wasserdichter DS18B20 | Wassertemperatur | [Amazon](https://link.amazon/B08FcJbtj) |
+| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | [Amazon](https://www.amazon.de/dp/B0iQQg2zF) |
+| USB-C Breakout-Kabel | Stromversorgung / Anschluss | [Amazon](https://www.amazon.de/dp/B0eO8jr4N) |
+| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | [Amazon](https://www.amazon.de/dp/B0dWRfbC4) |
+| Wasserdichter DS18B20 | Wassertemperatur | [Amazon](https://www.amazon.de/dp/B08FcJbtj) |
 | Geschützte 18650 Li-Ion-Zelle | Stromversorgung | – |
-| 18650-Batteriehalter | Aufnahme des Akkus | [Amazon](https://link.amazon/B0hraa6X7) |
+| 18650-Batteriehalter | Aufnahme des Akkus | [Amazon](https://www.amazon.de/dp/B0hraa6X7) |
 | **Pololu Mini MOSFET Slide Switch LV #2810** | A02YYUW im Deep Sleep vollständig abschalten | [Pololu](https://www.pololu.com/product/2810) |
 | Externe 2,4-GHz-WLAN-Antenne | Verbesserung der WLAN-Verbindung | – |
 
@@ -310,10 +310,11 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/). Ich drucke
 - Elektronik vor Kondenswasser und Spritzwasser schützen.
 - Den A02YYUW über den Pololu 2810 im Deep Sleep vollständig abschalten.
 - Pumpen- und Personen-/Aktivitätserkennung nur als Hinweis verwenden, niemals als alleinige sicherheitsrelevante Abschaltung oder Überwachung.
+- Dies ist ein experimentelles DIY-Projekt. Aufbau, Installation und Betrieb erfolgen auf eigene Verantwortung und eigenes Risiko.
 
 ## Unterstützung
 
-<a href="https://paypal.me/toor0001/5"><img src="assets/paypal-support-en.svg" alt="Buy me a coffee via PayPal" width="430"></a>
+<a href="https://paypal.me/toor0001/5"><img src="assets/paypal-support-de.svg" alt="Unterstütze PoolGuard über PayPal" width="430"></a>
 
 ## Lizenz
 

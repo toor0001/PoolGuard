@@ -3,8 +3,8 @@
 #include <cstdint>
 #include "esp_attr.h"
 
-// Kept in ESP32 RTC memory so the one-minute detection loop does not need to
-// write flash on every deep-sleep cycle. A full power loss resets this state.
+// Kept in ESP32 RTC memory so the configurable low-power detection loop does
+// not write flash on every deep-sleep cycle. A full power loss resets this state.
 struct PoolGuardRtcState {
   uint32_t magic;
   uint32_t report_sequence;

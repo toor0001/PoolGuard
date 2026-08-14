@@ -1,5 +1,8 @@
-# Gitignore settings for ESPHome
-# This is an example and may include too much for your use-case.
-# You can modify this file to suit your needs.
+# Local ESPHome state and credentials. secrets.example.yaml remains tracked.
 /.esphome/
 /secrets.yaml
+/build/
+/*.bin
+/*.elf
+/*.map
+/*.log
