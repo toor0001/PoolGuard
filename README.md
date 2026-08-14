@@ -113,6 +113,11 @@ no misleading firmware `Device Awake` binary sensor. Use HA's integration
 connectivity for live reachability and PoolGuard Status for the intentional
 operating state.
 
+<p align="center">
+  <img src="images/HA.png" alt="PoolGuard ESPHome integration in Home Assistant with retained sensor values" width="92%"><br>
+  <em>PoolGuard in Home Assistant: Even while <code>Sleeping / Offline</code>, the last successfully transmitted measurements remain available. The device status deliberately indicates the deep-sleep state.</em>
+</p>
+
 **Status Heartbeat** changes only after a complete successful report. Its Home
 Assistant `last_updated` metadata is the **Last Successful Report** time and
 shows the age of retained measurements without an ESP timestamp or flash write.
