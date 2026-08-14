@@ -121,6 +121,13 @@ Betriebszustand PoolGuard Status.
   <em>PoolGuard in Home Assistant: Auch während <code>Sleeping / Offline</code> bleiben die zuletzt erfolgreich übertragenen Messwerte verfügbar. Der Gerätestatus zeigt dabei bewusst den Deep-Sleep-Zustand an.</em>
 </p>
 
+### Lovelace-Dashboard
+
+<p align="center">
+  <img src="images/IMG_5329.png" alt="PoolGuard Lovelace-Dashboard mit Füllstand, Temperatur und Status-Kacheln" width="52%"><br>
+  <em>PoolGuard Lovelace-Dashboard mit Füllstand, Wassertemperatur, Gerätestatus sowie Pumpen- und Personen-/Aktivitätserkennung.</em>
+</p>
+
 **Status Heartbeat** ändert sich ausschließlich nach einem vollständigen,
 erfolgreichen Report. Seine `last_updated`-Metadaten in Home Assistant bilden
 damit **Last Successful Report** ab, ohne ESP-Zeitstempel oder Flash-Schreiben.
