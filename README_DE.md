@@ -167,10 +167,15 @@ actions:
           data:
             title: "🚨 PoolGuard: Wasserstand kritisch!"
             message: >-
-              Die aktuelle Wassertiefe beträgt
-              {{ states('sensor.poolguard_water_depth') }} cm.
+              PoolGuard hat einen kritischen Wasserstand bestätigt.
 
-              Der aktuelle Füllstand beträgt
+              Auslösende Wassertiefe:
+              {{ states('sensor.poolguard_low_water_trigger_depth') }} cm
+
+              Aktuelle Wassertiefe:
+              {{ states('sensor.poolguard_water_depth') }} cm
+
+              Aktueller Füllstand:
               {{ states('sensor.poolguard_water_level') }} %.
             data:
               push:
