@@ -317,6 +317,71 @@ actions:
 mode: restart
 ```
 
+---
+
+### 5. Warnung bei zu hohem Wasserstand
+
+PoolGuard misst nicht nur einen zu niedrigen Wasserstand, sondern kann auch verwendet werden, um vor einem **zu hohen Wasserstand** zu warnen.
+
+Dies kann beispielsweise nach starkem Regen oder beim Befüllen des Pools hilfreich sein.
+
+Im folgenden Beispiel wird eine kritische Benachrichtigung ausgelöst, sobald der Abstand zwischen PoolGuard und der Wasseroberfläche **weniger als 3 cm** beträgt.
+
+Die Warnung wird anschließend **alle 15 Minuten wiederholt**, solange der Wasserstand weiterhin zu hoch ist.
+
+> **Hinweis:** Der Grenzwert von `3 cm` ist nur ein Beispiel und sollte an die Einbauhöhe des Sensors und den gewünschten maximalen Wasserstand angepasst werden.
+
+```yaml
+alias: PoolGuard – Pool zu voll
+description: >
+  Kritische Warnung, wenn die Wasseroberfläche weniger als 3 cm vom
+  PoolGuard-Sensor entfernt ist. Wiederholung alle 15 Minuten,
+  solange der Pool weiterhin zu voll ist.
+
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.poolguard_distance_to_water
+    below: 3
+
+conditions: []
+
+actions:
+  - repeat:
+      while:
+        - condition: numeric_state
+          entity_id: sensor.poolguard_distance_to_water
+          below: 3
+
+      sequence:
+        - action: notify.mobile_app_YOUR_PHONE
+          data:
+            title: "🚨 PoolGuard: Pool zu voll!"
+            message: >-
+              Der Wasserstand ist zu hoch.
+
+              Abstand zwischen Sensor und Wasseroberfläche:
+              {{ states('sensor.poolguard_distance_to_water') | float(0) | round(1) }} cm
+
+              Wassertiefe:
+              {{ states('sensor.poolguard_water_depth') | float(0) | round(1) }} cm
+
+              Bitte Wasserstand kontrollieren.
+            data:
+              push:
+                interruption-level: critical
+
+        - delay:
+            minutes: 15
+
+mode: restart
+```
+
+Ersetze `notify.mobile_app_YOUR_PHONE` durch deinen eigenen Home-Assistant-Benachrichtigungsdienst.
+
+Die Automation verändert **keine Pumpen- oder PoolGuard-Einstellungen**. Sie dient ausschließlich zur Benachrichtigung.
+
+---
+
 > **Wichtig:** Diese Automationen sind Beispiele. Entity-IDs, Notify-Service, Wartezeiten und Abschaltverhalten müssen an die jeweilige Installation angepasst werden. Pumpen- und Personen-/Aktivitätserkennung basieren auf der Bewegung der Wasseroberfläche und sind kein zertifiziertes Sicherheitssystem.
 
 ## Wartungsmodus
