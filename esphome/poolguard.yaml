@@ -29,6 +29,9 @@ substitutions:
   # Low-water hysteresis in centimetres. The actual minimum safe depth is an
   # editable Home Assistant number and MUST be determined on the real skimmer.
   low_water_hysteresis_cm: "1.0"
+  # A single low reading is treated as a candidate only. Low Water becomes
+  # active after this many consecutive measurement cycles below the limit.
+  low_water_confirm_cycles: "2"
 
   # Fallback motion thresholds used until a complete valid calibration exists.
   pump_motion_threshold_cm: "1.5"
@@ -73,6 +76,8 @@ esphome:
             poolguard_rtc.pump_off_streak = 0;
             poolguard_rtc.person_on_streak = 0;
             poolguard_rtc.person_off_streak = 0;
+            poolguard_rtc.low_water_on_streak = 0;
+            poolguard_rtc.low_water_trigger_depth_cm = NAN;
             poolguard_rtc.person_alert_cooldown_minutes = 0;
           }
           // Person-alert cooldown is kept only in RTC memory. Normal measurement
@@ -89,7 +94,7 @@ esphome:
               poolguard_rtc.person_alert_cooldown_minutes -= elapsed_minutes;
             }
           }
-          
+
           poolguard_rtc.wake_count++;
           id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
@@ -385,6 +390,17 @@ sensor:
     unit_of_measurement: cm
     accuracy_decimals: 1
     state_class: measurement
+    update_interval: never
+
+  # Stores the exact depth of the measurement that confirmed a low-water alarm.
+  # This makes Home Assistant notifications independent of later measurements.
+  - platform: template
+    id: low_water_trigger_depth
+    name: "Low Water Trigger Depth"
+    unit_of_measurement: cm
+    accuracy_decimals: 1
+    state_class: measurement
+    entity_category: diagnostic
     update_interval: never
 
   # Percentage of configured maximum pool depth.
@@ -794,6 +810,8 @@ script:
             id(distance_cm).publish_state(id(distance_cm).state);
           if (id(water_depth_cm).has_state())
             id(water_depth_cm).publish_state(id(water_depth_cm).state);
+          if (std::isfinite(poolguard_rtc.low_water_trigger_depth_cm))
+            id(low_water_trigger_depth).publish_state(poolguard_rtc.low_water_trigger_depth_cm);
           if (id(water_level_percent).has_state())
             id(water_level_percent).publish_state(id(water_level_percent).state);
           if (id(pool_volume_m3).has_state())
@@ -1046,13 +1064,46 @@ script:
 
             const float low_limit = id(minimum_safe_water_depth).state;
             const float low_clear = low_limit + ${low_water_hysteresis_cm};
-            if (!poolguard_rtc.low_water_state && depth_cm <= low_limit) {
-              poolguard_rtc.low_water_state = 1;
-            } else if (poolguard_rtc.low_water_state && depth_cm >= low_clear) {
-              poolguard_rtc.low_water_state = 0;
+            if (!poolguard_rtc.low_water_state) {
+              if (depth_cm <= low_limit) {
+                if (poolguard_rtc.low_water_on_streak < 255)
+                  poolguard_rtc.low_water_on_streak++;
+
+                ESP_LOGI("poolguard",
+                         "Low-water candidate: depth=%.1fcm limit=%.1fcm confirmation=%u/%u",
+                         depth_cm, low_limit,
+                         (unsigned) poolguard_rtc.low_water_on_streak,
+                         (unsigned) ${low_water_confirm_cycles});
+
+                if (poolguard_rtc.low_water_on_streak >= ${low_water_confirm_cycles}) {
+                  poolguard_rtc.low_water_state = 1;
+                  poolguard_rtc.low_water_on_streak = 0;
+                  poolguard_rtc.low_water_trigger_depth_cm = depth_cm;
+                  id(low_water_trigger_depth).publish_state(depth_cm);
+                  ESP_LOGW("poolguard",
+                           "LOW WATER confirmed: trigger_depth=%.1fcm limit=%.1fcm",
+                           depth_cm, low_limit);
+                }
+              } else {
+                if (poolguard_rtc.low_water_on_streak != 0) {
+                  ESP_LOGI("poolguard",
+                           "Low-water candidate cleared: depth=%.1fcm limit=%.1fcm",
+                           depth_cm, low_limit);
+                }
+                poolguard_rtc.low_water_on_streak = 0;
+              }
+            } else {
+              poolguard_rtc.low_water_on_streak = 0;
+              if (depth_cm >= low_clear) {
+                poolguard_rtc.low_water_state = 0;
+                ESP_LOGI("poolguard",
+                         "Low-water state cleared: depth=%.1fcm clear_at=%.1fcm",
+                         depth_cm, low_clear);
+              }
             }
             id(low_water_level).publish_state(poolguard_rtc.low_water_state != 0);
           } else {
+            poolguard_rtc.low_water_on_streak = 0;
             id(water_depth_cm).publish_state(NAN);
             id(water_level_percent).publish_state(NAN);
             id(pool_volume_m3).publish_state(NAN);
@@ -1187,12 +1238,14 @@ script:
           }
 
           ESP_LOGI("poolguard",
-                   "frames=%d distance=%.1fcm motion=%.1fcm halves=%.1f/%.1fcm pump_th=%.2f person_on=%.2f person_clear=%.2f pump=%d person=%d low_water=%d report=%d",
+                   "frames=%d distance=%.1fcm motion=%.1fcm halves=%.1f/%.1fcm pump_th=%.2f person_on=%.2f person_clear=%.2f pump=%d person=%d low_water=%d low_streak=%u report=%d",
                    id(valid_frame_count), distance_cm_value, motion_cm,
                    first_half_motion, second_half_motion, pump_threshold,
                    person_on_threshold, person_clear_threshold,
                    poolguard_rtc.pump_state, poolguard_rtc.person_state,
-                   poolguard_rtc.low_water_state, id(report_needed));
+                   poolguard_rtc.low_water_state,
+                   (unsigned) poolguard_rtc.low_water_on_streak,
+                   id(report_needed));
       - if:
           condition:
             lambda: 'return id(report_needed);'
@@ -1315,6 +1368,13 @@ deep_sleep:
 # 5. Set "Minimum Safe Water Depth" to the real lowest depth at which the
 #    skimmer still supplies the circulation pump safely.
 # 6. Sensor-to-bottom distance does not have to be measured separately.
+#
+# LOW-WATER CONFIRMATION
+# One isolated measurement at or below Minimum Safe Water Depth is treated as a
+# candidate only. The alarm state is entered after two consecutive low readings.
+# With the default two-minute interval this normally confirms on the next wake.
+# The exact depth of the confirming measurement is retained in RTC memory and
+# exposed as "Low Water Trigger Depth" for diagnostics and HA notifications.
 #
 # POOL VOLUME
 # Volume assumes a cylinder: pi * radius^2 * current water depth.
