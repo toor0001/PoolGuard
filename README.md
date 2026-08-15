@@ -142,10 +142,10 @@ mode: single
 This automation sends an immediate warning when the water level becomes critical. If the low-water condition remains active, the warning is repeated once per hour until the water level returns to normal.
 
 ```yaml
-alias: PoolGuard – Low-water warning
+alias: PoolGuard – Niedrigwasser Warnung
 description: >
-  Warn immediately when the water level becomes critical and repeat
-  once per hour while the low-water condition remains active.
+  Warnt sofort bei kritischem Wasserstand und anschließend einmal pro Stunde,
+  solange der Wasserstand weiterhin kritisch ist.
 
 triggers:
   - trigger: state
@@ -165,12 +165,17 @@ actions:
       sequence:
         - action: notify.mobile_app_iphone_17_von_tobi
           data:
-            title: "🚨 PoolGuard: Water level critical!"
+            title: "🚨 PoolGuard: Wasserstand kritisch!"
             message: >-
-              Current water depth:
-              {{ states('sensor.poolguard_water_depth') }} cm.
+              PoolGuard hat einen kritischen Wasserstand bestätigt.
 
-              Current water level:
+              Auslösende Wassertiefe:
+              {{ states('sensor.poolguard_low_water_trigger_depth') }} cm
+
+              Aktuelle Wassertiefe:
+              {{ states('sensor.poolguard_water_depth') }} cm
+
+              Aktueller Füllstand:
               {{ states('sensor.poolguard_water_level') }} %.
             data:
               push:
