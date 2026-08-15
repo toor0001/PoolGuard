@@ -64,7 +64,7 @@ Das DYP-UART-Controlled-Protokoll wurde am realen PoolGuard erfolgreich verifizi
 
 **Measurement Interval** legt die gewünschte Zeit von einem normalen Wake bis zum nächsten zwischen 1 und 15 Minuten fest; Standard sind 2 Minuten. PoolGuard zieht die aktive Laufzeit des aktuellen Wakes vor dem Deep Sleep von dieser Periode ab. Die Messzeit wird also nicht einfach zum eingestellten Intervall addiert. Kürzere Intervalle reagieren schneller, benötigen aber mehr Akku.
 
-Bei jedem normalen Wake bleibt WLAN aus. PoolGuard versorgt den A02 nur während des Controlled-UART-Messbursts, wertet die Samples lokal aus und schaltet ihn anschließend wieder aus. **Periodic Report Every** legt den regelmäßigen Report nach 1 bis 120 Wakes fest; Standard sind 30. Damit ergeben 2 Minuten × 30 Wakes ungefähr einen Report pro Stunde. Änderungen von Pumpen-, Personen-/Badeaktivitäts- oder Niedrigwasserstatus lösen weiterhin sofort einen Report aus. WLAN/API werden sonst nur für Erstinbetriebnahme oder Wartung verwendet.
+Bei jedem normalen Wake bleibt WLAN aus. PoolGuard versorgt den A02 nur während des Controlled-UART-Messbursts, wertet die Samples lokal aus und schaltet ihn anschließend wieder aus. **Periodic Report Every** legt den regelmäßigen Report nach 1 bis 120 Wakes fest; Standard sind 30. Damit ergeben 2 Minuten × 30 Wakes ungefähr einen Report pro Stunde. Änderungen von Pumpen- und Niedrigwasserstatus können weiterhin sofort einen Report auslösen. Die erste neu erkannte Personen-/Badeaktivität wird ebenfalls sofort gemeldet; danach unterdrückt PoolGuard **180 Minuten lang weitere Reports, deren einziger Anlass ein erneuter Personenstatuswechsel wäre**. Während dieser Sperrzeit wird lokal weiter gemessen und klassifiziert, WLAN/API werden wegen eines flatternden Personenzustands jedoch nicht erneut gestartet. Die Sperrzeit liegt im RTC-Speicher und verursacht keine zusätzlichen Flash-Schreibzyklen. Regelmäßige Reports sowie erforderliche Pumpen- oder Niedrigwasserreports bleiben davon unberührt. WLAN/API werden sonst nur für Erstinbetriebnahme oder Wartung verwendet.
 
 Beide Intervall-Entities verwenden `restore_value` und überleben einen Akkuwechsel. ESPHome schreibt sie nur, wenn der Benutzer den Wert ändert. Messwerte, Wake-Zähler und Laufzeitzustände werden nicht bei jedem Wake in den Flash geschrieben; Zähler und offene Reportzustände verbleiben im RTC-Speicher.
 
@@ -88,13 +88,13 @@ Die Status-Entity zeigt **Initial Setup**, **Measuring**, **Reporting**, **Maint
 
 **Status Heartbeat** ändert sich ausschließlich nach einem vollständigen, erfolgreichen Report. Seine `last_updated`-Metadaten in Home Assistant bilden damit **Last Successful Report** ab, ohne ESP-Zeitstempel oder Flash-Schreiben.
 
-Die persistente Number-Entity **Water Temperature Offset** reicht von -5,0 bis +5,0 °C in 0,1-°C-Schritten und wird nur bei Änderungen gespeichert. Zeigt der DS18B20 beispielsweise 25,6 °C und ein Referenzthermometer 26,8 °C, wird +1,2 °C eingestellt; **Water Temperature** meldet danach 26,8 °C. Der Offset überlebt einen Akkuwechsel.
+Die persistente Number-Entity **Water Temperature Offset** reicht von -5,0 bis +5,0 °C in 0,1-°C-Schritten und wird nur bei Änderungen gespeichert. Zeigt der DS18B20 beispielsweise 25,6 °C und ein Referenzthermometer 26,8 °C, wird +1,2 °C eingestellt; **Water Temperature** meldet danach 26,8 °C. Der Offset überlebt einen Akkuwechsel. Der Offset wird bei einer Temperaturmessung genau einmal angewendet; ein vollständiger Report veröffentlicht den bereits korrigierten Messwert nicht erneut durch denselben Filter.
 
 OTA steht zur Verfügung, wenn PoolGuard im Initial Setup, Wartungsmodus oder während eines Reports ohnehin online ist. Nur für OTA wird keine zusätzliche WLAN-Verbindung aufgebaut.
 
 ### Beispiel: Warnmeldungen in Home Assistant
 
-PoolGuard kann in Home Assistant eine Warnung auslösen, sobald `Person Detected` von aus auf an wechselt oder `Low Water Level` aktiv wird. Für Smartphone-Pushmeldungen muss der Notify-Dienst an das eigene Gerät angepasst werden. Die Personenerkennung basiert ausschließlich auf Wasserbewegung und sollte erst nach einer realistischen Pumpen-/Personenkalibrierung für Warnungen verwendet werden.
+PoolGuard kann in Home Assistant eine Warnung auslösen, sobald `Person Detected` von aus auf an wechselt oder `Low Water Level` aktiv wird. Für Smartphone-Pushmeldungen muss der Notify-Dienst an das eigene Gerät angepasst werden. Die Personenerkennung basiert ausschließlich auf Wasserbewegung und sollte erst nach einer realistischen Pumpen-/Personenkalibrierung für Warnungen verwendet werden. Nach einer gemeldeten Personenerkennung unterdrückt die Firmware 180 Minuten lang weitere ausschließlich personenbedingte WLAN-/Report-Anforderungen; lokal wird währenddessen weiter gemessen.
 
 ```yaml
 alias: "PoolGuard – kritischer Alarm"
@@ -223,6 +223,16 @@ Die aktuellen Druckdateien liegen im Ordner [`3D-Files/`](3D-Files/). Ich drucke
   <img src="images/PG.jpg" alt="Mechanisches PoolGuard-Gehäusekonzept" width="88%"><br>
   <em>PoolGuard-Gehäusekonzept für Skimmerdeckel und lösbaren Elektronikträger.</em>
 </p>
+
+## Feuchtigkeitsschutz und Silicagel
+
+PoolGuard sitzt nur wenige Zentimeter über der Wasseroberfläche. Auch ohne direkten Wassereintritt können hohe Luftfeuchtigkeit und Temperaturwechsel Kondensation verursachen. Ein kleiner geschlossener **Silicagel-Beutel** im Elektronikgehäuse ist deshalb als zusätzlicher Feuchtepuffer sinnvoll. Für das kleine PoolGuard-Gehäuse sind insgesamt ungefähr **5–10 g** ein praktikabler Ausgangspunkt, sofern der Beutel sicher untergebracht ist und keine Kontakte oder Bauteile belastet.
+
+Silicagel wird nicht chemisch „verbraucht“, sättigt sich aber mit Wasser und verliert dann seine Wirkung. Regenerierbare Beutel, idealerweise mit Feuchtigkeitsindikator, können bei der saisonalen Wartung kontrolliert und nach Herstellerangabe getrocknet/regeneriert oder ersetzt werden. Wie lange ein Beutel wirksam bleibt, hängt stark davon ab, wie offen das Gehäuse für feuchte Außenluft ist sowie von Pooltemperatur, Außentemperatur und Tag-/Nacht-Schwankungen; in einem nicht hermetisch dichten Gehäuse ist deshalb keine feste Lebensdauer in Tagen seriös anzugeben.
+
+Kein loses Granulat und **kein Kochsalz** verwenden. Silicagel ersetzt außerdem keine Abdichtung gegen direktes Spritz- oder Tropfwasser. Das komplette Elektronikgehäuse sollte nicht pauschal mit Silikon zugeschmiert oder vollständig mit Epoxidharz vergossen werden; offensichtliche Eintrittsstellen und Kabeldurchführungen können dagegen gezielt abgedichtet werden.
+
+Ausführlicher: [Feuchtigkeit, Kondensation und Silicagel](docs/ENVIRONMENT_DE.md).
 
 ## Fertiger Aufbau
 
