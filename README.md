@@ -92,46 +92,226 @@ The persistent **Water Temperature Offset** ranges from -5.0 to +5.0 °C in 0.1 
 
 OTA remains available whenever PoolGuard is already online in Initial Setup, Maintenance Mode or a report window. The device does not create additional Wi-Fi connections solely for OTA.
 
-### Example: Home Assistant alerts
+## Example: Home Assistant alerts
 
-PoolGuard can trigger a Home Assistant notification when `Person Detected` changes from off to on or when `Low Water Level` becomes active. Replace the notify service with the service for your own phone. Person detection is based solely on water-surface motion and should only be used for alerts after realistic pump/person calibration. After one reported person event, the firmware suppresses further person-only Wi-Fi/report requests for 180 minutes while local measurements continue.
+PoolGuard can be combined with Home Assistant automations to provide several independent safety and notification functions. Keeping these automations separate makes troubleshooting easier and allows each protection function to be enabled, disabled, or adjusted independently.
+
+The examples below assume the following entities:
+
+- `binary_sensor.poolguard_person_detected`
+- `binary_sensor.poolguard_low_water_level`
+- `binary_sensor.poolguard_pump_detected`
+- `sensor.poolguard_water_depth`
+- `sensor.poolguard_water_level`
+- `switch.shellyplugmg3_08927254033c`
+- `notify.mobile_app_iphone_17_von_tobi`
+
+Replace the notification service and Shelly entity with your own entities if required.
+
+### 1. Person / bathing activity detected
+
+The firmware already rate-limits person-triggered reports. After one reported person/bathing event, further person-only report requests are suppressed for 180 minutes while local measurements continue. This prevents repeated notifications and unnecessary Wi-Fi/API wake-ups caused by fluctuating water movement.
 
 ```yaml
-alias: "PoolGuard – critical alert"
-mode: parallel
+alias: PoolGuard – Person detected
+description: Critical notification when PoolGuard detects person/bathing activity.
 triggers:
   - trigger: state
     entity_id: binary_sensor.poolguard_person_detected
     from: "off"
     to: "on"
-    id: person
+
+conditions: []
+
+actions:
+  - action: notify.mobile_app_iphone_17_von_tobi
+    data:
+      title: "🚨 PoolGuard: Pool activity!"
+      message: >-
+        PoolGuard detected strong water-surface movement that may indicate
+        a person or bathing activity in the pool.
+      data:
+        push:
+          interruption-level: critical
+
+mode: single
+```
+
+### 2. Low-water warning
+
+This automation sends an immediate warning when the water level becomes critical. If the low-water condition remains active, the warning is repeated once per hour until the water level returns to normal.
+
+```yaml
+alias: PoolGuard – Low-water warning
+description: >
+  Warn immediately when the water level becomes critical and repeat
+  once per hour while the low-water condition remains active.
+
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.poolguard_low_water_level
+    from: "off"
+    to: "on"
+
+conditions: []
+
+actions:
+  - repeat:
+      while:
+        - condition: state
+          entity_id: binary_sensor.poolguard_low_water_level
+          state: "on"
+
+      sequence:
+        - action: notify.mobile_app_iphone_17_von_tobi
+          data:
+            title: "🚨 PoolGuard: Water level critical!"
+            message: >-
+              Current water depth:
+              {{ states('sensor.poolguard_water_depth') }} cm.
+
+              Current water level:
+              {{ states('sensor.poolguard_water_level') }} %.
+            data:
+              push:
+                interruption-level: critical
+
+        - delay:
+            hours: 1
+
+mode: restart
+```
+
+### 3. Pump safety shutdown on low water
+
+This automation switches the circulation pump off when PoolGuard reports a critical water level.
+
+It also prevents the pump from being switched back on while the low-water condition remains active. This is useful when the pump is controlled by another schedule or automation that could otherwise start it again.
+
+A critical notification is sent every time the automation actually performs a safety shutdown.
+
+```yaml
+alias: PoolGuard – Pump safety shutdown
+description: >
+  Switch off the pool pump when the water level is critical and prevent
+  it from being switched back on while the low-water condition remains active.
+  Send a critical notification for every safety shutdown.
+
+triggers:
   - trigger: state
     entity_id: binary_sensor.poolguard_low_water_level
     from: "off"
     to: "on"
     id: low_water
-conditions: []
+
+  - trigger: state
+    entity_id: switch.shellyplugmg3_08927254033c
+    from: "off"
+    to: "on"
+    id: pump_on
+
+conditions:
+  - condition: state
+    entity_id: binary_sensor.poolguard_low_water_level
+    state: "on"
+
+  - condition: state
+    entity_id: switch.shellyplugmg3_08927254033c
+    state: "on"
+
 actions:
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: person
-        sequence:
-          - action: notify.mobile_app_YOUR_PHONE
-            data:
-              title: "PoolGuard: Pool activity!"
-              message: "Strong water movement detected that may indicate bathing activity."
-      - conditions:
-          - condition: trigger
-            id: low_water
-        sequence:
-          - action: notify.mobile_app_YOUR_PHONE
-            data:
-              title: "PoolGuard: Water level critical!"
-              message: >-
-                Water depth: {{ states('sensor.poolguard_water_depth') }} cm,
-                level: {{ states('sensor.poolguard_water_level') }} %.
+  - action: switch.turn_off
+    target:
+      entity_id: switch.shellyplugmg3_08927254033c
+
+  - action: notify.mobile_app_iphone_17_von_tobi
+    data:
+      title: "🚨 PoolGuard: Pump safety shutdown!"
+      message: >-
+        The circulation pump was automatically switched off because
+        PoolGuard detected a critical water level.
+
+        Water depth:
+        {{ states('sensor.poolguard_water_depth') }} cm
+
+        Water level:
+        {{ states('sensor.poolguard_water_level') }} %
+      data:
+        push:
+          interruption-level: critical
+
+mode: restart
 ```
+
+### 4. Pump powered but no normal water movement detected
+
+This automation covers a different failure mode: the Shelly reports that the circulation pump is powered, but PoolGuard does not detect the expected water-surface movement.
+
+This can happen, for example, if a multiport valve is still set to **backwash** or **waste** when a scheduled pump cycle starts. In this situation the pump may remove water from the pool instead of circulating it normally and could eventually run dry.
+
+Because PoolGuard operates in low-power measurement cycles, the automation does not react immediately. The condition must remain present for five minutes before the first warning is sent. This gives PoolGuard enough time for multiple measurement cycles and reduces false alarms.
+
+After the initial warning, another warning is sent every five minutes while the pump remains powered and PoolGuard still detects no normal circulation.
+
+For initial deployment, notification-only operation is recommended. Automatic shutdown can be added later after pump detection has been verified to be reliable under real operating conditions.
+
+```yaml
+alias: PoolGuard – Pump on without detected circulation
+description: >
+  Warn when the pump Shelly is on but PoolGuard does not detect the
+  expected circulation movement. Repeat every five minutes while the
+  fault condition remains active.
+
+triggers:
+  - trigger: template
+    value_template: >-
+      {{
+        is_state('switch.shellyplugmg3_08927254033c', 'on')
+        and
+        is_state('binary_sensor.poolguard_pump_detected', 'off')
+      }}
+    for:
+      minutes: 5
+
+conditions: []
+
+actions:
+  - repeat:
+      while:
+        - condition: state
+          entity_id: switch.shellyplugmg3_08927254033c
+          state: "on"
+
+        - condition: state
+          entity_id: binary_sensor.poolguard_pump_detected
+          state: "off"
+
+      sequence:
+        - action: notify.mobile_app_iphone_17_von_tobi
+          data:
+            title: "🚨 PoolGuard: Pump running without circulation!"
+            message: >-
+              The pump Shelly is switched on, but PoolGuard does not detect
+              the expected water movement from normal circulation.
+
+              Please check the pool system immediately.
+
+              Possible causes:
+              - multiport valve still set to backwash/waste
+              - missing water flow
+              - blocked circulation
+              - pump problem
+            data:
+              push:
+                interruption-level: critical
+
+        - delay:
+            minutes: 5
+
+mode: restart
+```
+
+> **Important:** These automations are examples only. Entity IDs, notification services, delay times and shutdown behaviour must be adapted to the actual installation. Pump and person/activity detection are based on water-surface motion and must not be treated as a certified safety system.
 
 ## Maintenance Mode
 
