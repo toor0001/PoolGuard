@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include "esp_attr.h"
 
@@ -56,6 +57,21 @@ struct CycleAwareStreak {
   }
 };
 
+// The circulation pump lowers the local level inside this skimmer by roughly
+// 2.5-3 cm even though the actual pool level is unchanged. The normal editable
+// low-water limit therefore remains valid while the pump is stopped, while an
+// already detected/pending pump gets a lower emergency floor. This value is
+// deliberately conservative relative to the observed ~100.4-101.2 cm running
+// level; a genuinely falling pump-running level can still trigger protection.
+static constexpr float POOLGUARD_PUMP_RUNNING_LOW_WATER_DEPTH_CM = 99.0f;
+
+struct PumpAwareLowWaterTriggerDepth {
+  float value;
+
+  PumpAwareLowWaterTriggerDepth &operator=(float new_value);
+  operator float() const { return value; }
+};
+
 struct PoolGuardRtcState {
   uint32_t magic;
   uint32_t report_sequence;
@@ -79,7 +95,7 @@ struct PoolGuardRtcState {
   // Low water still requires consecutive normal battery wakes. Repeated
   // Maintenance Mode bursts in one wake do not count as extra confirmations.
   CycleAwareStreak<12> low_water_on_streak;
-  float low_water_trigger_depth_cm;
+  PumpAwareLowWaterTriggerDepth low_water_trigger_depth_cm;
 
   // Remaining person-alert lockout in minutes. This is RTC-only: it survives
   // deep sleep without flash writes, but intentionally resets after power loss.
@@ -87,9 +103,28 @@ struct PoolGuardRtcState {
 };
 
 // Bump whenever the RTC structure layout changes so stale RTC data is reset.
-static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D36;  // "PGM6"
+static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D37;  // "PGM7"
 RTC_DATA_ATTR inline PoolGuardRtcState poolguard_rtc{};
 
 inline uint16_t poolguard_current_wake_count() {
   return poolguard_rtc.wake_count;
+}
+
+inline PumpAwareLowWaterTriggerDepth &PumpAwareLowWaterTriggerDepth::operator=(float new_value) {
+  value = new_value;
+
+  // poolguard.yaml stores the confirming depth immediately after setting the
+  // low-water state. At that exact point we can reject only the known hydraulic
+  // pump drawdown without changing the normal user-configured low-water limit.
+  if (std::isfinite(new_value) && poolguard_rtc.low_water_state != 0) {
+    const bool pump_context =
+        poolguard_rtc.pump_state != 0 || poolguard_rtc.pump_on_streak > 0;
+
+    if (pump_context && new_value > POOLGUARD_PUMP_RUNNING_LOW_WATER_DEPTH_CM) {
+      poolguard_rtc.low_water_state = 0;
+      value = NAN;
+    }
+  }
+
+  return *this;
 }
