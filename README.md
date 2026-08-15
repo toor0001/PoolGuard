@@ -315,6 +315,68 @@ actions:
 
 mode: restart
 ```
+### 5. High water level alert
+
+PoolGuard can be used not only to detect a low water level, but also to warn when the pool water level becomes **too high**.
+
+This can be useful, for example, after heavy rainfall or while filling the pool.
+
+The following Home Assistant automation sends a critical notification when the distance between PoolGuard and the water surface drops below **3 cm**.
+
+The warning is then repeated **every 15 minutes** for as long as the water level remains too high.
+
+> **Note:** The `3 cm` threshold is only an example. Adjust it according to the sensor installation height and the desired maximum pool water level.
+
+```yaml
+alias: PoolGuard – High Water Level
+description: >
+  Sends a critical warning when the water surface is less than 3 cm
+  from the PoolGuard sensor. The warning is repeated every 15 minutes
+  while the pool water level remains too high.
+
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.poolguard_distance_to_water
+    below: 3
+
+conditions: []
+
+actions:
+  - repeat:
+      while:
+        - condition: numeric_state
+          entity_id: sensor.poolguard_distance_to_water
+          below: 3
+
+      sequence:
+        - action: notify.mobile_app_YOUR_PHONE
+          data:
+            title: "🚨 PoolGuard: Water level too high!"
+            message: >-
+              The pool water level is too high.
+
+              Distance between sensor and water surface:
+              {{ states('sensor.poolguard_distance_to_water') | float(0) | round(1) }} cm
+
+              Current water depth:
+              {{ states('sensor.poolguard_water_depth') | float(0) | round(1) }} cm
+
+              Please check the pool water level.
+            data:
+              push:
+                interruption-level: critical
+
+        - delay:
+            minutes: 15
+
+mode: restart
+```
+
+Replace `notify.mobile_app_YOUR_PHONE` with your own Home Assistant notification service.
+
+This automation does **not** control the pool pump or change any PoolGuard settings. It is used for notification purposes only.
+
+---
 
 > **Important:** These automations are examples only. Entity IDs, notification services, delay times and shutdown behaviour must be adapted to the actual installation. Pump and person/activity detection are based on water-surface motion and must not be treated as a certified safety system.
 
