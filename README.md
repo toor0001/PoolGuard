@@ -64,7 +64,7 @@ The DYP UART-Controlled protocol has been successfully verified on the physical 
 
 **Measurement Interval** configures the desired time from one normal wake to the next from 1 to 15 minutes; the default is 2 minutes. PoolGuard subtracts the current wake's active runtime from this period before entering deep sleep, so the measurement time is not simply added to the configured interval. Shorter intervals react faster but consume more battery.
 
-Every normal wake keeps Wi-Fi disabled, powers the A02 only for its controlled-UART burst, evaluates the samples locally and switches the A02 off again. **Periodic Report Every** selects a regular report after 1 to 120 wakes and defaults to 30. Thus 2 minutes × 30 wakes is approximately one report per hour. Pump, person/activity and low-water state changes still request an immediate report. Wi-Fi/API are otherwise used only for Initial Setup or Maintenance.
+Every normal wake keeps Wi-Fi disabled, powers the A02 only for its controlled-UART burst, evaluates the samples locally and switches the A02 off again. **Periodic Report Every** selects a regular report after 1 to 120 wakes and defaults to 30. Thus 2 minutes × 30 wakes is approximately one report per hour. Pump and low-water state changes can still request an immediate report. The first newly detected person/bathing event is also reported immediately; PoolGuard then suppresses **further reports for 180 minutes when the only reason would be another person-state change**. Local measurements and classification continue during this lockout, but Wi-Fi/API are not started again merely because the person state is flapping. The lockout is kept in RTC memory and causes no additional flash writes. Periodic reports and required pump or low-water reports are unaffected. Wi-Fi/API are otherwise used only for Initial Setup or Maintenance.
 
 Both interval numbers use `restore_value` and survive a complete battery disconnect. ESPHome writes them only when the user changes them. Measurements, the normal wake counter and runtime state are not written to flash each wake; the counter and pending reported states remain in RTC memory.
 
@@ -88,13 +88,13 @@ The status entity reports **Initial Setup**, **Measuring**, **Reporting**, **Mai
 
 **Status Heartbeat** changes only after a complete successful report. Its Home Assistant `last_updated` metadata is the **Last Successful Report** time and shows the age of retained measurements without an ESP timestamp or flash write.
 
-The persistent **Water Temperature Offset** ranges from -5.0 to +5.0 °C in 0.1 °C steps and is saved only when changed. For example, if the DS18B20 reads 25.6 °C while a reference thermometer reads 26.8 °C, set the offset to +1.2 °C; **Water Temperature** then reports 26.8 °C. It survives battery replacement.
+The persistent **Water Temperature Offset** ranges from -5.0 to +5.0 °C in 0.1 °C steps and is saved only when changed. For example, if the DS18B20 reads 25.6 °C while a reference thermometer reads 26.8 °C, set the offset to +1.2 °C; **Water Temperature** then reports 26.8 °C. It survives battery replacement. The offset is applied exactly once to a real temperature conversion; a complete report does not feed the already corrected value through the same filter a second time.
 
 OTA remains available whenever PoolGuard is already online in Initial Setup, Maintenance Mode or a report window. The device does not create additional Wi-Fi connections solely for OTA.
 
 ### Example: Home Assistant alerts
 
-PoolGuard can trigger a Home Assistant notification when `Person Detected` changes from off to on or when `Low Water Level` becomes active. Replace the notify service with the service for your own phone. Person detection is based solely on water-surface motion and should only be used for alerts after realistic pump/person calibration.
+PoolGuard can trigger a Home Assistant notification when `Person Detected` changes from off to on or when `Low Water Level` becomes active. Replace the notify service with the service for your own phone. Person detection is based solely on water-surface motion and should only be used for alerts after realistic pump/person calibration. After one reported person event, the firmware suppresses further person-only Wi-Fi/report requests for 180 minutes while local measurements continue.
 
 ```yaml
 alias: "PoolGuard – critical alert"
@@ -223,6 +223,16 @@ The current printable files are available in [`3D-Files/`](3D-Files/). I use a B
   <img src="images/PG.jpg" alt="PoolGuard mechanical housing concept" width="88%"><br>
   <em>PoolGuard housing concept for the skimmer lid and removable electronics carrier.</em>
 </p>
+
+## Moisture protection and silica gel
+
+PoolGuard sits only a few centimetres above the water surface. Even without direct water ingress, high humidity and temperature changes can cause condensation. A small closed **silica-gel desiccant sachet** inside the electronics compartment is therefore useful as an additional moisture buffer. For the small PoolGuard enclosure, roughly **5–10 g** in total is a practical starting point if the sachet can be secured without stressing components or electrical contacts.
+
+Silica gel is not chemically "used up", but it gradually becomes saturated with water and then loses its effectiveness. Regenerable sachets, ideally with a humidity indicator, can be inspected during seasonal maintenance and dried/regenerated according to the manufacturer's instructions or replaced. There is no honest fixed lifetime in days for PoolGuard: it depends heavily on how open the enclosure is to humid outside air, pool and air temperature, and day/night temperature swings.
+
+Do not use loose granules and **do not use table salt**. Silica gel also does not replace protection against direct splashes or dripping water. The complete electronics enclosure should not simply be covered in silicone or fully potted in epoxy; obvious ingress paths and cable entries can instead be sealed selectively.
+
+More detail: [Moisture, condensation and silica gel](docs/ENVIRONMENT.md).
 
 ## Final assembly
 
