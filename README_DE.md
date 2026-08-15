@@ -92,46 +92,227 @@ Die persistente Number-Entity **Water Temperature Offset** reicht von -5,0 bis +
 
 OTA steht zur Verfügung, wenn PoolGuard im Initial Setup, Wartungsmodus oder während eines Reports ohnehin online ist. Nur für OTA wird keine zusätzliche WLAN-Verbindung aufgebaut.
 
-### Beispiel: Warnmeldungen in Home Assistant
+## Beispiel: Home-Assistant-Warnungen
 
-PoolGuard kann in Home Assistant eine Warnung auslösen, sobald `Person Detected` von aus auf an wechselt oder `Low Water Level` aktiv wird. Für Smartphone-Pushmeldungen muss der Notify-Dienst an das eigene Gerät angepasst werden. Die Personenerkennung basiert ausschließlich auf Wasserbewegung und sollte erst nach einer realistischen Pumpen-/Personenkalibrierung für Warnungen verwendet werden. Nach einer gemeldeten Personenerkennung unterdrückt die Firmware 180 Minuten lang weitere ausschließlich personenbedingte WLAN-/Report-Anforderungen; lokal wird währenddessen weiter gemessen.
+PoolGuard kann in Home Assistant mit mehreren getrennten Automationen kombiniert werden. Die Funktionen bewusst aufzuteilen erleichtert Fehlersuche und Wartung und ermöglicht es, einzelne Schutzfunktionen unabhängig voneinander zu aktivieren, zu deaktivieren oder anzupassen.
+
+Die folgenden Beispiele gehen von diesen Entities aus:
+
+- `binary_sensor.poolguard_person_detected`
+- `binary_sensor.poolguard_low_water_level`
+- `binary_sensor.poolguard_pump_detected`
+- `sensor.poolguard_water_depth`
+- `sensor.poolguard_water_level`
+- `switch.shellyplugmg3_08927254033c`
+- `notify.mobile_app_iphone_17_von_tobi`
+
+Notify-Service und Shelly-Entity müssen bei anderen Installationen entsprechend angepasst werden.
+
+### 1. Person / Badeaktivität erkannt
+
+Die Firmware begrenzt personenbedingte Reports bereits selbst. Nach einer gemeldeten Person-/Badeaktivität werden für 180 Minuten weitere Reports unterdrückt, deren einziger Anlass eine erneute Personenerkennung wäre. Lokal misst PoolGuard währenddessen weiter. Dadurch werden wiederholte Warnungen und unnötige WLAN/API-Verbindungen durch schwankende Wasserbewegung vermieden.
 
 ```yaml
-alias: "PoolGuard – kritischer Alarm"
-mode: parallel
+alias: PoolGuard – Person erkannt
+description: Kritische Warnung bei erkannter Person bzw. Badeaktivität im Pool.
 triggers:
   - trigger: state
     entity_id: binary_sensor.poolguard_person_detected
     from: "off"
     to: "on"
-    id: person
+
+conditions: []
+
+actions:
+  - action: notify.mobile_app_iphone_17_von_tobi
+    data:
+      title: "🚨 PoolGuard: Aktivität im Pool!"
+      message: >-
+        PoolGuard hat starke Wasserbewegung erkannt, die auf eine Person
+        bzw. Badeaktivität im Pool hindeuten kann.
+      data:
+        push:
+          interruption-level: critical
+
+mode: single
+```
+
+### 2. Niedrigwasser-Warnung
+
+Diese Automation warnt sofort, wenn der Wasserstand kritisch wird. Bleibt der Niedrigwasserzustand bestehen, wird die Warnung anschließend einmal pro Stunde wiederholt, bis der Wasserstand wieder in Ordnung ist.
+
+```yaml
+alias: PoolGuard – Niedrigwasser Warnung
+description: >
+  Warnt sofort bei kritischem Wasserstand und anschließend einmal pro Stunde,
+  solange der Wasserstand weiterhin kritisch ist.
+
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.poolguard_low_water_level
+    from: "off"
+    to: "on"
+
+conditions: []
+
+actions:
+  - repeat:
+      while:
+        - condition: state
+          entity_id: binary_sensor.poolguard_low_water_level
+          state: "on"
+
+      sequence:
+        - action: notify.mobile_app_iphone_17_von_tobi
+          data:
+            title: "🚨 PoolGuard: Wasserstand kritisch!"
+            message: >-
+              Die aktuelle Wassertiefe beträgt
+              {{ states('sensor.poolguard_water_depth') }} cm.
+
+              Der aktuelle Füllstand beträgt
+              {{ states('sensor.poolguard_water_level') }} %.
+            data:
+              push:
+                interruption-level: critical
+
+        - delay:
+            hours: 1
+
+mode: restart
+```
+
+### 3. Pumpen-Sicherheitsabschaltung bei Niedrigwasser
+
+Diese Automation schaltet die Umwälzpumpe ab, sobald PoolGuard einen kritischen Wasserstand meldet.
+
+Zusätzlich verhindert sie, dass die Pumpe wieder eingeschaltet wird, solange `Low Water Level` weiterhin aktiv ist. Das ist insbesondere dann wichtig, wenn die Pumpe zusätzlich über einen Zeitplan oder eine andere Automation gesteuert wird.
+
+Bei jeder tatsächlich ausgeführten Sicherheitsabschaltung wird eine kritische Push-Nachricht gesendet.
+
+```yaml
+alias: PoolGuard – Pumpen Sicherheitsabschaltung
+description: >
+  Schaltet die Poolpumpe bei kritischem Wasserstand ab und verhindert
+  ein Wiedereinschalten, solange Niedrigwasser erkannt wird.
+  Jede Sicherheitsabschaltung erzeugt eine kritische Warnung.
+
+triggers:
   - trigger: state
     entity_id: binary_sensor.poolguard_low_water_level
     from: "off"
     to: "on"
     id: low_water
-conditions: []
+
+  - trigger: state
+    entity_id: switch.shellyplugmg3_08927254033c
+    from: "off"
+    to: "on"
+    id: pump_on
+
+conditions:
+  - condition: state
+    entity_id: binary_sensor.poolguard_low_water_level
+    state: "on"
+
+  - condition: state
+    entity_id: switch.shellyplugmg3_08927254033c
+    state: "on"
+
 actions:
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: person
-        sequence:
-          - action: notify.mobile_app_DEIN_HANDY
-            data:
-              title: "PoolGuard: Aktivität im Pool!"
-              message: "Starke Wasserbewegung erkannt, die auf Badeaktivität hindeuten kann."
-      - conditions:
-          - condition: trigger
-            id: low_water
-        sequence:
-          - action: notify.mobile_app_DEIN_HANDY
-            data:
-              title: "PoolGuard: Wasserstand kritisch!"
-              message: >-
-                Wassertiefe: {{ states('sensor.poolguard_water_depth') }} cm,
-                Füllstand: {{ states('sensor.poolguard_water_level') }} %.
+  - action: switch.turn_off
+    target:
+      entity_id: switch.shellyplugmg3_08927254033c
+
+  - action: notify.mobile_app_iphone_17_von_tobi
+    data:
+      title: "🚨 PoolGuard: Pumpe sicherheitsbedingt abgeschaltet!"
+      message: >-
+        Die Poolpumpe wurde automatisch abgeschaltet, weil PoolGuard
+        einen kritischen Wasserstand erkannt hat.
+
+        Wassertiefe:
+        {{ states('sensor.poolguard_water_depth') }} cm
+
+        Füllstand:
+        {{ states('sensor.poolguard_water_level') }} %
+      data:
+        push:
+          interruption-level: critical
+
+mode: restart
 ```
+
+### 4. Pumpe eingeschaltet, aber keine normale Wasserbewegung erkannt
+
+Diese Automation deckt einen anderen Fehlerfall ab: Der Shelly meldet, dass die Pumpe eingeschaltet ist, PoolGuard erkennt aber nicht die typische Wasserbewegung einer normalen Umwälzung.
+
+Das kann beispielsweise passieren, wenn das Mehrwegeventil noch auf **Rückspülen** oder **Entleeren** steht und die zeitgesteuerte Pumpe startet. In diesem Fall kann Wasser aus dem Pool in den Kanal gepumpt werden, anstatt normal umgewälzt zu werden. Im ungünstigsten Fall könnte die Pumpe schließlich trockenlaufen.
+
+Da PoolGuard im stromsparenden Betrieb in Messzyklen arbeitet, wird nicht sofort alarmiert. Der Fehlerzustand muss zunächst fünf Minuten bestehen. Dadurch erhält PoolGuard Zeit für mehrere Messzyklen und kurze Übergangszustände führen nicht sofort zu einem Fehlalarm.
+
+Nach der ersten Warnung wird die Meldung alle fünf Minuten wiederholt, solange der Pumpen-Shelly weiterhin eingeschaltet ist und PoolGuard keine normale Umwälzung erkennt.
+
+Für die erste Inbetriebnahme empfiehlt sich zunächst nur die Warnfunktion. Eine automatische Sicherheitsabschaltung kann später ergänzt werden, nachdem die Pumpenerkennung unter realen Bedingungen ausreichend zuverlässig getestet wurde.
+
+```yaml
+alias: PoolGuard – Pumpe an ohne Wasserbewegung
+description: >
+  Warnt, wenn der Pumpen-Shelly eingeschaltet ist, PoolGuard aber keine
+  typische Wasserbewegung der Umwälzpumpe erkennt. Nach der ersten
+  Erkennungsfrist erfolgt die Warnung alle fünf Minuten, solange der
+  Fehlerzustand besteht.
+
+triggers:
+  - trigger: template
+    value_template: >-
+      {{
+        is_state('switch.shellyplugmg3_08927254033c', 'on')
+        and
+        is_state('binary_sensor.poolguard_pump_detected', 'off')
+      }}
+    for:
+      minutes: 5
+
+conditions: []
+
+actions:
+  - repeat:
+      while:
+        - condition: state
+          entity_id: switch.shellyplugmg3_08927254033c
+          state: "on"
+
+        - condition: state
+          entity_id: binary_sensor.poolguard_pump_detected
+          state: "off"
+
+      sequence:
+        - action: notify.mobile_app_iphone_17_von_tobi
+          data:
+            title: "🚨 PoolGuard: Pumpe läuft ohne Wasserbewegung!"
+            message: >-
+              Der Pumpen-Shelly ist eingeschaltet, aber PoolGuard erkennt
+              keine typische Wasserbewegung der normalen Umwälzung.
+
+              Bitte die Poolanlage sofort prüfen!
+
+              Mögliche Ursachen:
+              - Mehrwegeventil steht noch auf Rückspülen/Entleeren
+              - fehlender Wasserfluss
+              - blockierte Umwälzung
+              - Problem mit der Pumpe
+            data:
+              push:
+                interruption-level: critical
+
+        - delay:
+            minutes: 5
+
+mode: restart
+```
+
+> **Wichtig:** Diese Automationen sind Beispiele. Entity-IDs, Notify-Service, Wartezeiten und Abschaltverhalten müssen an die jeweilige Installation angepasst werden. Pumpen- und Personen-/Aktivitätserkennung basieren auf der Bewegung der Wasseroberfläche und sind kein zertifiziertes Sicherheitssystem.
 
 ## Wartungsmodus
 
