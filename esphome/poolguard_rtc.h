@@ -10,8 +10,10 @@
 // Normal battery operation evaluates one burst per wake. Maintenance Mode can
 // evaluate many bursts during the same ESP boot. CycleAwareStreak therefore
 // counts at most once per wake and never confirms a new state in the same wake
-// in which the candidate started. This prevents fast Maintenance Mode sampling
-// from turning one pump-start event into many independent confirmations.
+// in which the candidate started. If repeated same-wake samples were seen, the
+// first later wake starts a fresh candidate instead of inheriting Maintenance
+// Mode evidence. This prevents a Maintenance -> normal transition from causing
+// an immediate confirmation after a very short sleep.
 struct PoolGuardRtcState;
 uint16_t poolguard_current_wake_count();
 
@@ -19,10 +21,14 @@ template<uint8_t Tag>
 struct CycleAwareStreak {
   uint8_t value;
   uint16_t first_wake_count;
+  bool repeated_same_wake;
 
   CycleAwareStreak &operator=(uint8_t new_value) {
     value = new_value;
-    if (new_value == 0) first_wake_count = 0;
+    if (new_value == 0) {
+      first_wake_count = 0;
+      repeated_same_wake = false;
+    }
     return *this;
   }
 
@@ -33,13 +39,28 @@ struct CycleAwareStreak {
     const uint16_t current_wake = poolguard_current_wake_count();
     if (value == 0) {
       first_wake_count = current_wake;
+      repeated_same_wake = false;
       value = 1;
       return;
     }
 
     // Repeated Maintenance Mode bursts happen within one wake. They must not
-    // accumulate confirmation credit; only a later real wake may advance it.
-    if (current_wake == first_wake_count) return;
+    // accumulate confirmation credit. Remember that repeated same-wake evidence
+    // occurred so the first later wake can deliberately start fresh.
+    if (current_wake == first_wake_count) {
+      repeated_same_wake = true;
+      return;
+    }
+
+    // A candidate observed repeatedly during one long wake most likely came
+    // from Maintenance Mode. Do not carry that 1/2 state across the transition
+    // into normal battery operation; make this later wake the new first sample.
+    if (repeated_same_wake) {
+      first_wake_count = current_wake;
+      repeated_same_wake = false;
+      value = 1;
+      return;
+    }
 
     if (value < 255) value++;
   }
@@ -103,7 +124,7 @@ struct PoolGuardRtcState {
 };
 
 // Bump whenever the RTC structure layout changes so stale RTC data is reset.
-static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D37;  // "PGM7"
+static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D38;  // "PGM8"
 RTC_DATA_ATTR inline PoolGuardRtcState poolguard_rtc{};
 
 inline uint16_t poolguard_current_wake_count() {
