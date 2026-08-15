@@ -1,1 +1,3 @@
-__CONTENT_TOO_LARGE_PLACEHOLDER__
+substitutions:
+  device_name: poolguard
+  friendly_name: PoolGuard
