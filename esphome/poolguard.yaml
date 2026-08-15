@@ -37,6 +37,13 @@ substitutions:
   person_on_confirm_cycles: "1"
   person_off_confirm_cycles: "2"
 
+  # Person/activity detection deliberately uses a higher entry threshold than
+  # the simple midpoint between Pump and Person profiles. Clearing uses the
+  # midpoint. Together with two independent half-burst checks this provides
+  # hysteresis without delaying a real detection across multiple wake cycles.
+  person_profile_on_fraction: "0.65"
+  person_profile_clear_fraction: "0.50"
+
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
@@ -788,8 +795,14 @@ script:
 
           const float pump_threshold = id(learned_pump_threshold_cm) > 0.0f
               ? id(learned_pump_threshold_cm) : ${pump_motion_threshold_cm};
-          const float person_threshold = id(learned_person_threshold_cm) > 0.0f
-              ? id(learned_person_threshold_cm) : ${person_motion_threshold_cm};
+          const bool valid_person_profiles =
+              id(calibrated_pump_cm) >= 0.0f &&
+              id(calibrated_person_cm) > id(calibrated_pump_cm);
+          const float person_threshold = valid_person_profiles
+              ? id(calibrated_pump_cm) + ${person_profile_on_fraction}f *
+                    (id(calibrated_person_cm) - id(calibrated_pump_cm))
+              : (id(learned_person_threshold_cm) > 0.0f
+                    ? id(learned_person_threshold_cm) : ${person_motion_threshold_cm});
           id(active_pump_threshold).publish_state(pump_threshold);
           id(active_person_threshold).publish_state(person_threshold);
 
@@ -910,7 +923,8 @@ script:
               id(learned_pump_threshold_cm) =
                   0.5f * (id(calibrated_quiet_cm) + id(calibrated_pump_cm));
               id(learned_person_threshold_cm) =
-                  0.5f * (id(calibrated_pump_cm) + id(calibrated_person_cm));
+                  id(calibrated_pump_cm) + ${person_profile_on_fraction}f *
+                  (id(calibrated_person_cm) - id(calibrated_pump_cm));
               id(active_pump_threshold).publish_state(id(learned_pump_threshold_cm));
               id(active_person_threshold).publish_state(id(learned_person_threshold_cm));
             } else {
@@ -959,7 +973,11 @@ script:
             return;
           }
 
-          auto distances = id(sample_distances_mm);
+          // Keep an unsorted copy so the two halves of the five-second burst can
+          // be evaluated independently. A person transition must be present in
+          // both halves; a single splash or pump transient is not enough.
+          auto raw_distances = id(sample_distances_mm);
+          auto distances = raw_distances;
           std::sort(distances.begin(), distances.end());
           const size_t n = distances.size();
           const size_t low_index = (n - 1) / 10;
@@ -969,6 +987,21 @@ script:
               : 0.5f * (distances[n / 2 - 1] + distances[n / 2])) / 10.0f;
           const float motion_cm =
               (distances[high_index] - distances[low_index]) / 10.0f;
+
+          auto trimmed_span_cm = [](std::vector<int> values) -> float {
+            if (values.size() < 5) return NAN;
+            std::sort(values.begin(), values.end());
+            const size_t count = values.size();
+            const size_t low = (count - 1) / 10;
+            const size_t high = ((count - 1) * 9) / 10;
+            return (values[high] - values[low]) / 10.0f;
+          };
+          const size_t split = raw_distances.size() / 2;
+          std::vector<int> first_half(raw_distances.begin(), raw_distances.begin() + split);
+          std::vector<int> second_half(raw_distances.begin() + split, raw_distances.end());
+          const float first_half_motion = trimmed_span_cm(first_half);
+          const float second_half_motion = trimmed_span_cm(second_half);
+
           id(distance_cm).publish_state(distance_cm_value);
           id(water_motion_cm).publish_state(motion_cm);
 
@@ -1006,15 +1039,35 @@ script:
 
           const float pump_threshold = id(learned_pump_threshold_cm) > 0.0f
               ? id(learned_pump_threshold_cm) : ${pump_motion_threshold_cm};
-          const float person_threshold = id(learned_person_threshold_cm) > 0.0f
-              ? id(learned_person_threshold_cm) : ${person_motion_threshold_cm};
+          const bool valid_person_profiles =
+              id(calibrated_pump_cm) >= 0.0f &&
+              id(calibrated_person_cm) > id(calibrated_pump_cm);
+          const float person_on_threshold = valid_person_profiles
+              ? id(calibrated_pump_cm) + ${person_profile_on_fraction}f *
+                    (id(calibrated_person_cm) - id(calibrated_pump_cm))
+              : (id(learned_person_threshold_cm) > 0.0f
+                    ? id(learned_person_threshold_cm) : ${person_motion_threshold_cm});
+          const float person_clear_threshold = valid_person_profiles
+              ? id(calibrated_pump_cm) + ${person_profile_clear_fraction}f *
+                    (id(calibrated_person_cm) - id(calibrated_pump_cm))
+              : person_on_threshold * 0.85f;
           id(active_pump_threshold).publish_state(pump_threshold);
-          id(active_person_threshold).publish_state(person_threshold);
+          id(active_person_threshold).publish_state(person_on_threshold);
 
-          const bool raw_person = motion_cm >= person_threshold;
-          if (raw_person) {
+          const bool halves_valid =
+              std::isfinite(first_half_motion) && std::isfinite(second_half_motion);
+          const bool person_on_evidence = halves_valid
+              ? (first_half_motion >= person_on_threshold &&
+                 second_half_motion >= person_on_threshold)
+              : motion_cm >= person_on_threshold;
+          const bool person_clear_evidence = halves_valid
+              ? (first_half_motion < person_clear_threshold &&
+                 second_half_motion < person_clear_threshold)
+              : motion_cm < person_clear_threshold;
+
+          if (!poolguard_rtc.person_state) {
             poolguard_rtc.person_off_streak = 0;
-            if (!poolguard_rtc.person_state) {
+            if (person_on_evidence) {
               poolguard_rtc.person_on_streak++;
               if (poolguard_rtc.person_on_streak >= ${person_on_confirm_cycles}) {
                 poolguard_rtc.person_state = 1;
@@ -1025,13 +1078,15 @@ script:
             }
           } else {
             poolguard_rtc.person_on_streak = 0;
-            if (poolguard_rtc.person_state) {
+            if (person_clear_evidence) {
               poolguard_rtc.person_off_streak++;
               if (poolguard_rtc.person_off_streak >= ${person_off_confirm_cycles}) {
                 poolguard_rtc.person_state = 0;
                 poolguard_rtc.person_off_streak = 0;
               }
             } else {
+              // Hysteresis zone or continuing activity: keep the current person
+              // state and cancel any pending clear streak.
               poolguard_rtc.person_off_streak = 0;
             }
           }
@@ -1077,9 +1132,11 @@ script:
               pump_changed || person_changed || low_water_changed || id(status_report_due);
 
           ESP_LOGI("poolguard",
-                   "frames=%d distance=%.1fcm motion=%.1fcm depth=%.1fcm level=%.0f%% volume=%.2fm3 pump=%d person=%d low_water=%d report=%d",
-                   id(valid_frame_count), distance_cm_value, motion_cm, depth_cm, level_pct,
-                   volume_m3, poolguard_rtc.pump_state, poolguard_rtc.person_state,
+                   "frames=%d distance=%.1fcm motion=%.1fcm halves=%.1f/%.1fcm pump_th=%.2f person_on=%.2f person_clear=%.2f pump=%d person=%d low_water=%d report=%d",
+                   id(valid_frame_count), distance_cm_value, motion_cm,
+                   first_half_motion, second_half_motion, pump_threshold,
+                   person_on_threshold, person_clear_threshold,
+                   poolguard_rtc.pump_state, poolguard_rtc.person_state,
                    poolguard_rtc.low_water_state, id(report_needed));
       - if:
           condition:
