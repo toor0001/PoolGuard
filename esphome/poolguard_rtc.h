@@ -17,12 +17,12 @@
 // Mode evidence. This prevents a Maintenance -> normal transition from causing
 // an immediate confirmation after a very short sleep.
 struct PoolGuardRtcState;
-uint16_t poolguard_current_wake_count();
+uint32_t poolguard_current_wake_count();
 
 template<uint8_t Tag>
 struct CycleAwareStreak {
   uint8_t value;
-  uint16_t first_wake_count;
+  uint32_t first_wake_count;
   bool repeated_same_wake;
 
   CycleAwareStreak &operator=(uint8_t new_value) {
@@ -38,7 +38,7 @@ struct CycleAwareStreak {
   bool operator<(int rhs) const { return value < rhs; }
 
   void operator++(int) {
-    const uint16_t current_wake = poolguard_current_wake_count();
+    const uint32_t current_wake = poolguard_current_wake_count();
     if (value == 0) {
       first_wake_count = current_wake;
       repeated_same_wake = false;
@@ -98,14 +98,25 @@ struct PumpAwareLowWaterTriggerDepth {
 struct PoolGuardRtcState {
   uint32_t magic;
   uint32_t report_sequence;
+  uint32_t detection_wake_sequence;
   uint16_t wake_count;
 
   int8_t pump_state;
   int8_t person_state;
   int8_t low_water_state;
+  int8_t flood_risk_state;
   int8_t reported_pump_state;
   int8_t reported_person_state;
   int8_t reported_low_water_state;
+  int8_t reported_flood_risk_state;
+
+  // Most recent water depth from a quiet burst, and the quiet depth that was
+  // last included in a successfully completed Home Assistant report.
+  float reliable_distance_cm;
+  float reliable_water_depth_cm;
+  float reported_reliable_water_depth_cm;
+  bool reliable_water_depth_valid;
+  bool reported_reliable_water_depth_valid;
 
   uint8_t pump_on_streak;
   uint8_t pump_off_streak;
@@ -120,17 +131,26 @@ struct PoolGuardRtcState {
   CycleAwareStreak<12> low_water_on_streak;
   PumpAwareLowWaterTriggerDepth low_water_trigger_depth_cm;
 
+  // A robust near-sensor distance must occur in separate wakes. Repeated
+  // Maintenance Mode bursts within one boot cannot confirm Flood Risk.
+  CycleAwareStreak<21> flood_risk_on_streak;
+
+  // Remaining normal measurement wakes before another non-critical report
+  // retry may enable Wi-Fi. Critical new events bypass this counter.
+  uint8_t communication_retry_backoff_wakes;
+  uint32_t communication_backoff_last_wake_sequence;
+
   // Remaining person-alert lockout in minutes. This is RTC-only: it survives
   // deep sleep without flash writes, but intentionally resets after power loss.
   uint16_t person_alert_cooldown_minutes;
 };
 
 // Bump whenever the RTC structure layout changes so stale RTC data is reset.
-static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474D38;  // "PGM8"
+static constexpr uint32_t POOLGUARD_RTC_MAGIC = 0x50474E33;  // "PGN3"
 RTC_DATA_ATTR inline PoolGuardRtcState poolguard_rtc{};
 
-inline uint16_t poolguard_current_wake_count() {
-  return poolguard_rtc.wake_count;
+inline uint32_t poolguard_current_wake_count() {
+  return poolguard_rtc.detection_wake_sequence;
 }
 
 inline PumpAwareLowWaterTriggerDepth &PumpAwareLowWaterTriggerDepth::operator=(float new_value) {

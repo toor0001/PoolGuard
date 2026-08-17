@@ -45,6 +45,16 @@ substitutions:
   # but it does not wake Wi-Fi/API again just because motion toggles.
   person_alert_cooldown_minutes: "180"
 
+  # After a failed non-critical report, keep measuring locally but skip Wi-Fi
+  # for this many wakes. New critical events bypass the backoff immediately.
+  communication_retry_backoff_wakes: "5"
+
+  # Installation-dependent mechanical safety clearance below the A02; adjust
+  # it to the real sensor mounting. Flood Risk uses the existing robust lower
+  # distance quantile, never a single minimum sample.
+  sensor_flood_risk_distance_cm: "5.0"
+  sensor_flood_risk_clear_hysteresis_cm: "1.0"
+
   # Person/activity detection deliberately uses a higher entry threshold than
   # the simple midpoint between Pump and Person profiles. Clearing uses the
   # midpoint. Together with two independent half-burst checks this provides
@@ -70,19 +80,30 @@ esphome:
           if (poolguard_rtc.magic != POOLGUARD_RTC_MAGIC) {
             poolguard_rtc.magic = POOLGUARD_RTC_MAGIC;
             poolguard_rtc.report_sequence = 0;
+            poolguard_rtc.detection_wake_sequence = 0;
             poolguard_rtc.wake_count = 0;
             poolguard_rtc.pump_state = 0;
             poolguard_rtc.person_state = 0;
             poolguard_rtc.low_water_state = 0;
+            poolguard_rtc.flood_risk_state = 0;
             poolguard_rtc.reported_pump_state = -1;
             poolguard_rtc.reported_person_state = -1;
             poolguard_rtc.reported_low_water_state = -1;
+            poolguard_rtc.reported_flood_risk_state = -1;
+            poolguard_rtc.reliable_distance_cm = NAN;
+            poolguard_rtc.reliable_water_depth_cm = NAN;
+            poolguard_rtc.reported_reliable_water_depth_cm = NAN;
+            poolguard_rtc.reliable_water_depth_valid = false;
+            poolguard_rtc.reported_reliable_water_depth_valid = false;
             poolguard_rtc.pump_on_streak = 0;
             poolguard_rtc.pump_off_streak = 0;
             poolguard_rtc.person_on_streak = 0;
             poolguard_rtc.person_off_streak = 0;
             poolguard_rtc.low_water_on_streak = 0;
             poolguard_rtc.low_water_trigger_depth_cm = NAN;
+            poolguard_rtc.flood_risk_on_streak = 0;
+            poolguard_rtc.communication_retry_backoff_wakes = 0;
+            poolguard_rtc.communication_backoff_last_wake_sequence = 0;
             poolguard_rtc.person_alert_cooldown_minutes = 0;
           }
           // Person-alert cooldown is kept only in RTC memory. Normal measurement
@@ -100,6 +121,7 @@ esphome:
             }
           }
 
+          poolguard_rtc.detection_wake_sequence++;
           poolguard_rtc.wake_count++;
           id(sample_distances_mm).clear();
           id(valid_frame_count) = 0;
@@ -224,6 +246,12 @@ globals:
     type: std::vector<uint8_t>
     restore_value: no
   - id: report_needed
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  # True only while the current report attempt carries a newly accepted person
+  # alert. The RTC cooldown starts after that exact report succeeds.
+  - id: person_alert_pending
     type: bool
     restore_value: no
     initial_value: "false"
@@ -531,6 +559,10 @@ binary_sensor:
     id: low_water_level
     name: "Low Water Level"
     device_class: problem
+  - platform: template
+    id: sensor_flood_risk
+    name: "Sensor Flood Risk"
+    device_class: problem
 
 button:
   - platform: template
@@ -811,16 +843,19 @@ script:
     mode: single
     then:
       - lambda: |-
-          if (id(distance_cm).has_state())
-            id(distance_cm).publish_state(id(distance_cm).state);
-          if (id(water_depth_cm).has_state())
-            id(water_depth_cm).publish_state(id(water_depth_cm).state);
+          if (std::isfinite(poolguard_rtc.reliable_distance_cm))
+            id(distance_cm).publish_state(poolguard_rtc.reliable_distance_cm);
+          if (poolguard_rtc.reliable_water_depth_valid) {
+            const float reliable_depth = poolguard_rtc.reliable_water_depth_cm;
+            id(water_depth_cm).publish_state(reliable_depth);
+            id(water_level_percent).publish_state(
+                100.0f * reliable_depth / (float) ${pool_max_depth_cm});
+            const float radius_m = ((float) ${pool_diameter_m}) * 0.5f;
+            id(pool_volume_m3).publish_state(
+                3.14159265f * radius_m * radius_m * (reliable_depth / 100.0f));
+          }
           if (std::isfinite(poolguard_rtc.low_water_trigger_depth_cm))
             id(low_water_trigger_depth).publish_state(poolguard_rtc.low_water_trigger_depth_cm);
-          if (id(water_level_percent).has_state())
-            id(water_level_percent).publish_state(id(water_level_percent).state);
-          if (id(pool_volume_m3).has_state())
-            id(pool_volume_m3).publish_state(id(pool_volume_m3).state);
           // Do NOT re-publish water_temperature here. The Dallas sensor's
           // component.update above already publishes the freshly corrected value.
           // Re-publishing its current state would run the offset filter a second time.
@@ -830,6 +865,7 @@ script:
           id(pump_detected).publish_state(poolguard_rtc.pump_state != 0);
           id(person_detected).publish_state(poolguard_rtc.person_state != 0);
           id(low_water_level).publish_state(poolguard_rtc.low_water_state != 0);
+          id(sensor_flood_risk).publish_state(poolguard_rtc.flood_risk_state != 0);
 
           if (id(calibrated_quiet_cm) >= 0.0f)
             id(quiet_motion_profile).publish_state(id(calibrated_quiet_cm));
@@ -1007,6 +1043,16 @@ script:
     then:
       - output.turn_off: a02_power
       - lambda: |-
+          id(person_alert_pending) = false;
+          const bool communication_backoff_active =
+              poolguard_rtc.communication_retry_backoff_wakes > 0;
+          if (communication_backoff_active &&
+              poolguard_rtc.communication_backoff_last_wake_sequence !=
+                  poolguard_rtc.detection_wake_sequence) {
+            poolguard_rtc.communication_retry_backoff_wakes--;
+            poolguard_rtc.communication_backoff_last_wake_sequence =
+                poolguard_rtc.detection_wake_sequence;
+          }
           const float configured_report_wakes = id(periodic_report_every_wakes).state;
           const uint32_t report_wakes = (uint32_t) std::lround(
               std::isfinite(configured_report_wakes) ? configured_report_wakes : 30.0f);
@@ -1014,7 +1060,7 @@ script:
 
           if (id(valid_frame_count) < 5) {
             ESP_LOGW("poolguard", "Not enough valid A02 frames: %d", id(valid_frame_count));
-            id(report_needed) = id(status_report_due);
+            id(report_needed) = id(status_report_due) && !communication_backoff_active;
             return;
           }
 
@@ -1032,6 +1078,11 @@ script:
               : 0.5f * (distances[n / 2 - 1] + distances[n / 2])) / 10.0f;
           const float motion_cm =
               (distances[high_index] - distances[low_index]) / 10.0f;
+          // With at least 11 samples, the existing lower ~10% quantile cannot
+          // be set by one isolated low-distance outlier.
+          const bool near_distance_valid = n >= 11;
+          const float near_distance_cm = near_distance_valid
+              ? distances[low_index] / 10.0f : NAN;
 
           auto trimmed_span_cm = [](std::vector<int> values) -> float {
             if (values.size() < 5) return NAN;
@@ -1047,9 +1098,33 @@ script:
           const float first_half_motion = trimmed_span_cm(first_half);
           const float second_half_motion = trimmed_span_cm(second_half);
 
-          id(distance_cm).publish_state(distance_cm_value);
           id(water_motion_cm).publish_state(motion_cm);
 
+          const float pump_threshold =
+              id(learned_pump_threshold_cm) > 0.0f
+                  ? id(learned_pump_threshold_cm)
+                  : ${pump_motion_threshold_cm};
+
+          const bool halves_valid =
+              std::isfinite(first_half_motion) &&
+              std::isfinite(second_half_motion);
+
+          // The existing Quiet/Pump boundary is also the water-level trust
+          // boundary. A moving burst remains useful for motion classification,
+          // but contributes no new water-level or low-water information.
+          const bool reliable_level =
+              halves_valid &&
+              motion_cm < pump_threshold &&
+              first_half_motion < pump_threshold &&
+              second_half_motion < pump_threshold;
+
+          if (reliable_level) {
+            poolguard_rtc.reliable_distance_cm = distance_cm_value;
+            id(distance_cm).publish_state(distance_cm_value);
+          }
+
+          const bool low_water_was_active =
+              poolguard_rtc.low_water_state != 0;
           float depth_cm = NAN;
           float level_pct = NAN;
           float volume_m3 = NAN;
@@ -1063,32 +1138,35 @@ script:
             const float area_m2 = 3.14159265f * radius_m * radius_m;
             volume_m3 = area_m2 * (depth_cm / 100.0f);
 
-            id(water_depth_cm).publish_state(depth_cm);
-            id(water_level_percent).publish_state(level_pct);
-            id(pool_volume_m3).publish_state(volume_m3);
+            if (reliable_level) {
+              poolguard_rtc.reliable_water_depth_cm = depth_cm;
+              poolguard_rtc.reliable_water_depth_valid = true;
+              id(water_depth_cm).publish_state(depth_cm);
+              id(water_level_percent).publish_state(level_pct);
+              id(pool_volume_m3).publish_state(volume_m3);
 
-            const float configured_low_limit = id(minimum_safe_water_depth).state;
+              const float configured_low_limit = id(minimum_safe_water_depth).state;
 
-            // The running circulation pump lowers the local water level in the
-            // skimmer by roughly 2.5–3 cm. This is normal hydraulic drawdown and
-            // must not be interpreted as an actual loss of pool water.
-            //
-            // Pump OFF -> normal user configured limit.
-            // Pump ON  -> emergency limit of 99 cm.
-            const float low_limit =
-                poolguard_rtc.pump_state
-                    ? std::min(
-                          configured_low_limit,
-                          POOLGUARD_PUMP_RUNNING_LOW_WATER_DEPTH_CM)
-                    : configured_low_limit;
+              // The running circulation pump lowers the local water level in the
+              // skimmer by roughly 2.5–3 cm. This is normal hydraulic drawdown and
+              // must not be interpreted as an actual loss of pool water.
+              //
+              // Pump OFF -> normal user configured limit.
+              // Pump ON  -> emergency limit of 99 cm.
+              const float low_limit =
+                  poolguard_rtc.pump_state
+                      ? std::min(
+                            configured_low_limit,
+                            POOLGUARD_PUMP_RUNNING_LOW_WATER_DEPTH_CM)
+                      : configured_low_limit;
 
-            const float low_clear =
-                low_limit + ${low_water_hysteresis_cm};
+              const float low_clear =
+                  low_limit + ${low_water_hysteresis_cm};
 
-            if (!poolguard_rtc.low_water_state) {
-              if (depth_cm <= low_limit) {
-                if (poolguard_rtc.low_water_on_streak < 255)
-                  poolguard_rtc.low_water_on_streak++;
+              if (!poolguard_rtc.low_water_state) {
+                if (depth_cm <= low_limit) {
+                  if (poolguard_rtc.low_water_on_streak < 255)
+                    poolguard_rtc.low_water_on_streak++;
 
                 ESP_LOGI("poolguard",
                          "Low-water candidate: depth=%.1fcm limit=%.1fcm confirmation=%u/%u",
@@ -1096,45 +1174,71 @@ script:
                          (unsigned) poolguard_rtc.low_water_on_streak,
                          (unsigned) ${low_water_confirm_cycles});
 
-                if (poolguard_rtc.low_water_on_streak >= ${low_water_confirm_cycles}) {
-                  poolguard_rtc.low_water_state = 1;
+                  if (poolguard_rtc.low_water_on_streak >= ${low_water_confirm_cycles}) {
+                    poolguard_rtc.low_water_state = 1;
+                    poolguard_rtc.low_water_on_streak = 0;
+                    poolguard_rtc.low_water_trigger_depth_cm = depth_cm;
+                    id(low_water_trigger_depth).publish_state(depth_cm);
+                    ESP_LOGW("poolguard",
+                             "LOW WATER confirmed: trigger_depth=%.1fcm limit=%.1fcm",
+                             depth_cm, low_limit);
+                  }
+                } else {
+                  if (poolguard_rtc.low_water_on_streak != 0) {
+                    ESP_LOGI("poolguard",
+                             "Low-water candidate cleared: depth=%.1fcm limit=%.1fcm",
+                             depth_cm, low_limit);
+                  }
                   poolguard_rtc.low_water_on_streak = 0;
-                  poolguard_rtc.low_water_trigger_depth_cm = depth_cm;
-                  id(low_water_trigger_depth).publish_state(depth_cm);
-                  ESP_LOGW("poolguard",
-                           "LOW WATER confirmed: trigger_depth=%.1fcm limit=%.1fcm",
-                           depth_cm, low_limit);
                 }
               } else {
-                if (poolguard_rtc.low_water_on_streak != 0) {
-                  ESP_LOGI("poolguard",
-                           "Low-water candidate cleared: depth=%.1fcm limit=%.1fcm",
-                           depth_cm, low_limit);
-                }
                 poolguard_rtc.low_water_on_streak = 0;
+                if (depth_cm >= low_clear) {
+                  poolguard_rtc.low_water_state = 0;
+                  ESP_LOGI("poolguard",
+                           "Low-water state cleared: depth=%.1fcm clear_at=%.1fcm",
+                           depth_cm, low_clear);
+                }
               }
+              id(low_water_level).publish_state(poolguard_rtc.low_water_state != 0);
             } else {
-              poolguard_rtc.low_water_on_streak = 0;
-              if (depth_cm >= low_clear) {
-                poolguard_rtc.low_water_state = 0;
-                ESP_LOGI("poolguard",
-                         "Low-water state cleared: depth=%.1fcm clear_at=%.1fcm",
-                         depth_cm, low_clear);
-              }
+              ESP_LOGD("poolguard",
+                       "Moving burst: keeping last reliable water level and low-water state");
             }
-            id(low_water_level).publish_state(poolguard_rtc.low_water_state != 0);
           } else {
-            poolguard_rtc.low_water_on_streak = 0;
-            id(water_depth_cm).publish_state(NAN);
-            id(water_level_percent).publish_state(NAN);
-            id(pool_volume_m3).publish_state(NAN);
             ESP_LOGW("poolguard", "Water level not calibrated yet");
           }
 
-          const float pump_threshold =
-              id(learned_pump_threshold_cm) > 0.0f
-                  ? id(learned_pump_threshold_cm)
-                  : ${pump_motion_threshold_cm};
+          const bool flood_risk_was_active =
+              poolguard_rtc.flood_risk_state != 0;
+          const bool flood_risk_evidence =
+              near_distance_valid &&
+              near_distance_cm <= ${sensor_flood_risk_distance_cm};
+          const bool flood_risk_clear_evidence =
+              reliable_level && near_distance_valid &&
+              near_distance_cm >=
+                  (${sensor_flood_risk_distance_cm}f +
+                   ${sensor_flood_risk_clear_hysteresis_cm}f);
+
+          if (!poolguard_rtc.flood_risk_state) {
+            if (flood_risk_evidence) {
+              poolguard_rtc.flood_risk_on_streak++;
+              if (poolguard_rtc.flood_risk_on_streak >= 2) {
+                poolguard_rtc.flood_risk_state = 1;
+                poolguard_rtc.flood_risk_on_streak = 0;
+              }
+            } else if (reliable_level) {
+              poolguard_rtc.flood_risk_on_streak = 0;
+            }
+          } else {
+            poolguard_rtc.flood_risk_on_streak = 0;
+            if (flood_risk_clear_evidence)
+              poolguard_rtc.flood_risk_state = 0;
+          }
+          id(sensor_flood_risk).publish_state(
+              poolguard_rtc.flood_risk_state != 0);
+          const bool flood_risk_activated =
+              !flood_risk_was_active && poolguard_rtc.flood_risk_state != 0;
 
           const bool valid_person_profiles =
               id(calibrated_pump_cm) >= 0.0f &&
@@ -1161,10 +1265,6 @@ script:
           id(active_pump_threshold).publish_state(pump_threshold);
           id(active_person_threshold).publish_state(person_on_threshold);
 
-          const bool halves_valid =
-              std::isfinite(first_half_motion) &&
-              std::isfinite(second_half_motion);
-
           const bool person_on_evidence =
               halves_valid
                   ? (first_half_motion >= person_on_threshold &&
@@ -1181,14 +1281,20 @@ script:
           // ------------------------------------------------------------
           // PUMP
           //
-          // Pump detection is always evaluated independently.
-          // A previously detected person must never freeze the pump state.
+          // Pump detection runs whenever the burst is not person-dominated.
+          // During clear person evidence, the ultrasonic motion signal cannot
+          // determine a simultaneous pump transition reliably.
           // ------------------------------------------------------------
 
-          const bool raw_pump =
-              motion_cm >= pump_threshold;
+          const bool raw_pump = motion_cm >= pump_threshold;
 
-          if (raw_pump) {
+          // Clear person evidence owns this burst. Surface motion cannot then
+          // tell whether the pump changed, so preserve its state and prevent
+          // either pump streak from carrying ambiguous evidence forward.
+          if (person_on_evidence) {
+            poolguard_rtc.pump_on_streak = 0;
+            poolguard_rtc.pump_off_streak = 0;
+          } else if (raw_pump) {
 
             poolguard_rtc.pump_off_streak = 0;
 
@@ -1203,9 +1309,7 @@ script:
                 poolguard_rtc.pump_state = 1;
                 poolguard_rtc.pump_on_streak = 0;
 
-                ESP_LOGI(
-                    "poolguard",
-                    "Pump confirmed before person/low-water evaluation");
+                ESP_LOGI("poolguard", "Pump start confirmed");
               }
 
             } else {
@@ -1243,30 +1347,17 @@ script:
           // ------------------------------------------------------------
           // PERSON
           //
-          // Do not start a NEW person state while the circulation pump
-          // is already confirmed as running. The installed pump produces
-          // sustained surface movement which overlaps the learned person
-          // motion profile and has produced repeated false alarms.
-          //
-          // An existing person state is still allowed to clear normally.
+          // Person evidence is evaluated regardless of the current pump state,
+          // allowing all four Pump/Person state combinations.
           // ------------------------------------------------------------
+
+          const bool person_was_active = poolguard_rtc.person_state != 0;
 
           if (!poolguard_rtc.person_state) {
 
             poolguard_rtc.person_off_streak = 0;
 
-            if (poolguard_rtc.pump_state) {
-
-              // Confirmed pump motion must not manufacture a person alarm.
-              poolguard_rtc.person_on_streak = 0;
-
-              if (person_on_evidence) {
-                ESP_LOGD(
-                    "poolguard",
-                    "Person-like motion ignored while pump is confirmed running");
-              }
-
-            } else if (person_on_evidence) {
+            if (person_on_evidence) {
 
               poolguard_rtc.person_on_streak++;
 
@@ -1306,11 +1397,18 @@ script:
 
           id(pump_detected).publish_state(poolguard_rtc.pump_state != 0);
           id(person_detected).publish_state(poolguard_rtc.person_state != 0);
+          const bool person_activated =
+              !person_was_active && poolguard_rtc.person_state != 0;
 
           const bool pump_changed =
               poolguard_rtc.reported_pump_state != poolguard_rtc.pump_state;
           const bool low_water_changed =
               poolguard_rtc.reported_low_water_state != poolguard_rtc.low_water_state;
+          const bool flood_risk_changed =
+              poolguard_rtc.reported_flood_risk_state !=
+              poolguard_rtc.flood_risk_state;
+          const bool low_water_activated =
+              !low_water_was_active && poolguard_rtc.low_water_state != 0;
 
           // Person detection is intentionally special:
           //
@@ -1330,24 +1428,54 @@ script:
               poolguard_rtc.reported_person_state != 1 &&
               person_alert_allowed;
 
+          bool water_level_report = false;
+          if (poolguard_rtc.reliable_water_depth_valid) {
+            if (!poolguard_rtc.reported_reliable_water_depth_valid) {
+              water_level_report = true;
+            } else {
+              const int32_t current_depth_mm = (int32_t) std::lround(
+                  poolguard_rtc.reliable_water_depth_cm * 10.0f);
+              const int32_t reported_depth_mm = (int32_t) std::lround(
+                  poolguard_rtc.reported_reliable_water_depth_cm * 10.0f);
+              const int32_t delta_mm = current_depth_mm >= reported_depth_mm
+                  ? current_depth_mm - reported_depth_mm
+                  : reported_depth_mm - current_depth_mm;
+              water_level_report = delta_mm >= 3;
+            }
+          }
+
           id(report_needed) =
               pump_changed ||
               low_water_changed ||
+              low_water_activated ||
+              flood_risk_changed ||
+              flood_risk_activated ||
               person_alert ||
+              water_level_report ||
               id(status_report_due);
 
-          if (person_alert) {
-            poolguard_rtc.person_alert_cooldown_minutes =
-                ${person_alert_cooldown_minutes};
+          const bool critical_report =
+              (person_alert && person_activated) ||
+              low_water_activated || flood_risk_activated;
+
+          if (id(report_needed) && communication_backoff_active &&
+              !critical_report) {
+            id(report_needed) = false;
             ESP_LOGI("poolguard",
-                     "Person alert accepted; suppressing further person-triggered reports for %u minutes",
-                     (unsigned) poolguard_rtc.person_alert_cooldown_minutes);
+                     "Report pending; communication backoff has %u wake(s) remaining",
+                     (unsigned) poolguard_rtc.communication_retry_backoff_wakes);
+          }
+
+          if (person_alert) {
+            ESP_LOGI("poolguard",
+                     "Person alert accepted; cooldown will start after successful report");
           } else if (poolguard_rtc.person_state != poolguard_rtc.reported_person_state &&
                      !person_alert_allowed) {
             ESP_LOGD("poolguard",
                      "Person state changed during alert cooldown; staying offline (%u min remaining)",
                      (unsigned) poolguard_rtc.person_alert_cooldown_minutes);
           }
+          id(person_alert_pending) = person_alert;
 
           ESP_LOGI("poolguard",
                    "frames=%d distance=%.1fcm motion=%.1fcm halves=%.1f/%.1fcm pump_th=%.2f person_on=%.2f person_clear=%.2f pump=%d person=%d low_water=%d low_streak=%u report=%d",
@@ -1401,18 +1529,43 @@ script:
                             poolguard_rtc.reported_pump_state = poolguard_rtc.pump_state;
                             poolguard_rtc.reported_person_state = poolguard_rtc.person_state;
                             poolguard_rtc.reported_low_water_state = poolguard_rtc.low_water_state;
+                            poolguard_rtc.reported_flood_risk_state =
+                                poolguard_rtc.flood_risk_state;
+                            poolguard_rtc.communication_retry_backoff_wakes = 0;
+                            poolguard_rtc.communication_backoff_last_wake_sequence =
+                                poolguard_rtc.detection_wake_sequence;
+                            if (poolguard_rtc.reliable_water_depth_valid) {
+                              poolguard_rtc.reported_reliable_water_depth_cm =
+                                  poolguard_rtc.reliable_water_depth_cm;
+                              poolguard_rtc.reported_reliable_water_depth_valid = true;
+                            }
+                            if (id(person_alert_pending)) {
+                              poolguard_rtc.person_alert_cooldown_minutes =
+                                  ${person_alert_cooldown_minutes};
+                              id(person_alert_pending) = false;
+                            }
                             if (id(status_report_due)) {
                               poolguard_rtc.wake_count = 0;
                               id(status_report_due) = false;
                             }
                       else:
+                        - lambda: |-
+                            poolguard_rtc.communication_retry_backoff_wakes =
+                                ${communication_retry_backoff_wakes};
+                            poolguard_rtc.communication_backoff_last_wake_sequence =
+                                poolguard_rtc.detection_wake_sequence;
                         - logger.log:
                             level: WARN
-                            format: "API disconnected before payload flush; report remains pending"
+                            format: "API disconnected before payload flush; report remains pending behind retry backoff"
                 else:
+                  - lambda: |-
+                      poolguard_rtc.communication_retry_backoff_wakes =
+                          ${communication_retry_backoff_wakes};
+                      poolguard_rtc.communication_backoff_last_wake_sequence =
+                          poolguard_rtc.detection_wake_sequence;
                   - logger.log:
                       level: WARN
-                      format: "WiFi/API timeout; state change remains pending and will be retried next wake"
+                      format: "WiFi/API timeout; report remains pending behind retry backoff"
       # The HA helper is received only after an existing report connection.
       # Give its subscription state time to arrive before deciding to sleep.
       - if:
