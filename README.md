@@ -19,6 +19,30 @@ PoolGuard exposes values and states that can be used for automations such as:
 
 > **Name and affiliation:** PoolGuard is an independent open-source DIY project. It is not affiliated with, endorsed by or connected to any company, brand or commercial product using the PoolGuard name.
 
+## Design Principles
+
+1. **Reliability:** Prefer “not currently determinable with confidence” over a precise-looking state inferred from ambiguous ultrasound data.
+2. **Simple:** Few settings and special cases keep this seasonal device understandable after months away.
+3. **Battery efficient:** The ESP measures and decides locally. Wi-Fi/API are enabled only for relevant information or a periodic status report.
+4. **Failsafe:** Errors should lead to controlled continuation, retry/backoff or deep sleep; the A02 and Wi-Fi should not remain active indefinitely.
+5. **Separation of concerns:** PoolGuard determines physical states. Home Assistant handles notifications, actuators, offline monitoring and derived convenience information.
+
+**PoolGuard/ESP:** water temperature, reliable distance/depth/level/volume, surface and pump motion, bathing activity, Low Water and Sensor Flood Risk. **Home Assistant:** dashboard, reminders, pump shutdown, high-water, pump-mismatch and offline warnings, plus an optional algae-risk advisory. Use only functions that provide clear value.
+
+## Reliable water and motion evaluation
+
+A water-level burst is reliable only when total motion and both burst halves remain below the active Quiet/Pump boundary. Only then are **Distance to Water**, **Water Depth**, **Water Level**, **Pool Volume** and Low Water updated. During waves these values retain the last reliable quiet measurement, while motion, pump, bathing activity and Sensor Flood Risk are still evaluated. A moving burst deliberately means **no new reliable water-level information**.
+
+Reliable depths do not connect on every wake. A report is requested once the change from the last successfully reported reliable value reaches at least 3 mm, compared as rounded integer millimetres. Small changes accumulate: `105.0 → 104.9` no report, `104.8` no report, `104.7` report.
+
+Person-dominated motion provides no pump ON/OFF evidence: bathing activity may be confirmed while the pump state is preserved and ambiguous pump streaks are cleared. All Pump ON/OFF and Person ON/OFF combinations are possible. During strong bathing activity, ultrasound cannot always determine the real pump state unambiguously.
+
+The 180-minute person cooldown starts only after successful transmission. After communication failure, PoolGuard waits five real wakes before a non-critical retry uses Wi-Fi again; local measurement continues. A new person alert, Low Water OFF→ON or Sensor Flood Risk OFF→ON may bypass backoff once. If that attempt fails, normal backoff applies again.
+
+**Sensor Flood Risk** protects the ultrasound sensor mounted close to the water; it is not a precise water-level measurement. It uses the robust lower distance quantile from at least 11 samples, so one small outlier is insufficient. The installation-dependent mechanical default clearance is 5.0 cm; clear uses 1.0 cm hysteresis and requires a reliable quiet burst. ON requires two different real wakes, and Maintenance bursts in one boot cannot count repeatedly. It adds no wakes, bursts or flash writes. The 5 cm must match the actual mounting and is unrelated to motion calibration.
+
+An independent RTC wake sequence protects wake-based confirmations from repeated Maintenance measurements. Known physical limitation: while a continuously running pump remains above the Quiet boundary, new reliable water-level values normally cannot be obtained; Low Water is therefore typically confirmed during quiet or pump-off phases.
+
 ## Parts
 
 | Part | Purpose | Link |
@@ -64,7 +88,7 @@ The DYP UART-Controlled protocol has been successfully verified on the physical 
 
 **Measurement Interval** configures the desired time from one normal wake to the next from 1 to 15 minutes; the default is 2 minutes. PoolGuard subtracts the current wake's active runtime from this period before entering deep sleep, so the measurement time is not simply added to the configured interval. Shorter intervals react faster but consume more battery.
 
-Every normal wake keeps Wi-Fi disabled, powers the A02 only for its controlled-UART burst, evaluates the samples locally and switches the A02 off again. **Periodic Report Every** selects a regular report after 1 to 120 wakes and defaults to 30. Thus 2 minutes × 30 wakes is approximately one report per hour. Pump and low-water state changes can still request an immediate report. The first newly detected person/bathing event is also reported immediately; PoolGuard then suppresses **further reports for 180 minutes when the only reason would be another person-state change**. Local measurements and classification continue during this lockout, but Wi-Fi/API are not started again merely because the person state is flapping. The lockout is kept in RTC memory and causes no additional flash writes. Periodic reports and required pump or low-water reports are unaffected. Wi-Fi/API are otherwise used only for Initial Setup or Maintenance.
+Every normal wake initially keeps Wi-Fi disabled, powers the A02 only for its controlled-UART burst, evaluates the samples locally and switches the A02 off again. **Periodic Report Every** selects 1 to 120 wakes and defaults to 30, or about one report per hour at two-minute intervals. A cumulative difference of at least 3 rounded millimetres in reliable water depth and relevant state changes report earlier. The 180-minute person cooldown starts only after successful transmission. A failed non-critical report waits five real wakes before trying Wi-Fi again; new critical ON events may bypass this RTC-only backoff. A successful API report resets it completely.
 
 Both interval numbers use `restore_value` and survive a complete battery disconnect. ESPHome writes them only when the user changes them. Measurements, the normal wake counter and runtime state are not written to flash each wake; the counter and pending reported states remain in RTC memory.
 
@@ -79,11 +103,13 @@ The status entity reports **Initial Setup**, **Measuring**, **Reporting**, **Mai
   <em>PoolGuard in Home Assistant: Even while <code>Sleeping / Offline</code>, the last successfully transmitted measurements remain available.</em>
 </p>
 
+Use native HA cards in three groups: **Status** with temperature, depth, PoolGuard Status, Connection/No Data, Low Water, Sensor Flood Risk, Pump and Bathing Activity; **Algae Risk** as a Low/green, Elevated/yellow or High/red traffic-light tile without percentages; **Controls** with Maintenance, Pump and UV. A Water Depth gauge may have installation-specific colour bands but is convenience UI only—PoolGuard or HA automations make protection decisions. Keep **Status Heartbeat**/`last_updated` visible in diagnostics. No `custom:button-card` is required.
+
 ### Lovelace dashboard
 
 <p align="center">
-  <img src="images/IMG_5329.png" alt="PoolGuard Lovelace dashboard with water level, temperature and status tiles" width="52%"><br>
-  <em>PoolGuard Lovelace dashboard with water level, water temperature, device status, circulation-pump state and person/activity detection.</em>
+  <img src="images/lovelace.jpg" alt="Final PoolGuard Lovelace dashboard with status, sensor protection, algae risk, controls and a coloured water-depth gauge" width="52%"><br>
+  <em>Current PoolGuard dashboard with water temperature and depth, device and connection status, water level, sensor protection, pump, bathing activity, algae risk, Maintenance, pump and UV controls, and a coloured water-depth gauge.</em>
 </p>
 
 **Status Heartbeat** changes only after a complete successful report. Its Home Assistant `last_updated` metadata is the **Last Successful Report** time and shows the age of retained measurements without an ESP timestamp or flash write.
@@ -96,17 +122,19 @@ OTA remains available whenever PoolGuard is already online in Initial Setup, Mai
 
 PoolGuard can be combined with Home Assistant automations to provide several independent safety and notification functions. Keeping these automations separate makes troubleshooting easier and allows each protection function to be enabled, disabled, or adjusted independently.
 
-The examples below assume the following entities:
+Actual entity IDs depend on the device name, area and Home Assistant installation. Every ID below is illustrative and must be checked and adapted in HA. Home Assistant notifies, repeats and controls actuators without waking PoolGuard more often. The examples assume these entities:
 
 - `binary_sensor.poolguard_person_detected`
 - `binary_sensor.poolguard_low_water_level`
 - `binary_sensor.poolguard_pump_detected`
+- `binary_sensor.poolguard_sensor_flood_risk`
+- `binary_sensor.poolguard_no_data` (HA template)
 - `sensor.poolguard_water_depth`
 - `sensor.poolguard_water_level`
-- `switch.shellyplugmg3_08927254033c`
-- `notify.mobile_app_iphone_17_von_tobi`
+- `switch.pool_pump`
+- `notify.mobile_app_your_phone`
 
-Replace the notification service and Shelly entity with your own entities if required.
+Replace the notification service and pump entity with your own entities.
 
 ### 1. Person / bathing activity detected
 
@@ -124,7 +152,7 @@ triggers:
 conditions: []
 
 actions:
-  - action: notify.mobile_app_iphone_17_von_tobi
+  - action: notify.mobile_app_your_phone
     data:
       title: "🚨 PoolGuard: Pool activity!"
       message: >-
@@ -139,52 +167,42 @@ mode: single
 
 ### 2. Low-water warning
 
-This automation sends an immediate warning when the water level becomes critical. If the low-water condition remains active, the warning is repeated once per hour until the water level returns to normal.
+HA notifies immediately, hourly and after an HA restart while Low Water remains active. No long `repeat`/`delay` loop is required.
 
 ```yaml
-alias: PoolGuard – Niedrigwasser Warnung
-description: >
-  Warnt sofort bei kritischem Wasserstand und anschließend einmal pro Stunde,
-  solange der Wasserstand weiterhin kritisch ist.
-
+alias: PoolGuard – Low Water Warning
 triggers:
   - trigger: state
     entity_id: binary_sensor.poolguard_low_water_level
     from: "off"
     to: "on"
-
-conditions: []
-
+  - trigger: time_pattern
+    minutes: "0"
+  - trigger: homeassistant
+    event: start
+conditions:
+  - condition: state
+    entity_id: binary_sensor.poolguard_low_water_level
+    state: "on"
 actions:
-  - repeat:
-      while:
-        - condition: state
-          entity_id: binary_sensor.poolguard_low_water_level
-          state: "on"
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "PoolGuard: Water level critical"
+      message: >-
+        PoolGuard has confirmed a critical water level.
 
-      sequence:
-        - action: notify.mobile_app_iphone_17_von_tobi
-          data:
-            title: "🚨 PoolGuard: Wasserstand kritisch!"
-            message: >-
-              PoolGuard hat einen kritischen Wasserstand bestätigt.
+        Trigger depth:
+        {{ states('sensor.poolguard_low_water_trigger_depth') }} cm
 
-              Auslösende Wassertiefe:
-              {{ states('sensor.poolguard_low_water_trigger_depth') }} cm
+        Current reliable water depth:
+        {{ states('sensor.poolguard_water_depth') }} cm
 
-              Aktuelle Wassertiefe:
-              {{ states('sensor.poolguard_water_depth') }} cm
-
-              Aktueller Füllstand:
-              {{ states('sensor.poolguard_water_level') }} %.
-            data:
-              push:
-                interruption-level: critical
-
-        - delay:
-            hours: 1
-
-mode: restart
+        Water level:
+        {{ states('sensor.poolguard_water_level') }} %
+      data:
+        push:
+          interruption-level: critical
+mode: single
 ```
 
 ### 3. Pump safety shutdown on low water
@@ -210,10 +228,12 @@ triggers:
     id: low_water
 
   - trigger: state
-    entity_id: switch.shellyplugmg3_08927254033c
+    entity_id: switch.pool_pump
     from: "off"
     to: "on"
     id: pump_on
+  - trigger: homeassistant
+    event: start
 
 conditions:
   - condition: state
@@ -221,15 +241,15 @@ conditions:
     state: "on"
 
   - condition: state
-    entity_id: switch.shellyplugmg3_08927254033c
+    entity_id: switch.pool_pump
     state: "on"
 
 actions:
   - action: switch.turn_off
     target:
-      entity_id: switch.shellyplugmg3_08927254033c
+      entity_id: switch.pool_pump
 
-  - action: notify.mobile_app_iphone_17_von_tobi
+  - action: notify.mobile_app_your_phone
     data:
       title: "🚨 PoolGuard: Pump safety shutdown!"
       message: >-
@@ -245,140 +265,250 @@ actions:
         push:
           interruption-level: critical
 
-mode: restart
+mode: single
 ```
 
-### 4. Pump powered but no normal water movement detected
+### 4. Pump powered but no typical water movement
 
-This automation covers a different failure mode: the Shelly reports that the circulation pump is powered, but PoolGuard does not detect the expected water-surface movement.
-
-This can happen, for example, if a multiport valve is still set to **backwash** or **waste** when a scheduled pump cycle starts. In this situation the pump may remove water from the pool instead of circulating it normally and could eventually run dry.
-
-Because PoolGuard operates in low-power measurement cycles, the automation does not react immediately. The condition must remain present for five minutes before the first warning is sent. This gives PoolGuard enough time for multiple measurement cycles and reduces false alarms.
-
-After the initial warning, another warning is sent every five minutes while the pump remains powered and PoolGuard still detects no normal circulation.
-
-For initial deployment, notification-only operation is recommended. Automatic shutdown can be added later after pump detection has been verified to be reliable under real operating conditions.
+This is a warning only. PoolGuard cannot know for certain that no water is flowing. Causes may include pump, suction, valve position, hydraulics or calibration. It deliberately does not warn during person/bathing activity or when data is stale.
 
 ```yaml
-alias: PoolGuard – Pump on without detected circulation
-description: >
-  Warn when the pump Shelly is on but PoolGuard does not detect the
-  expected circulation movement. Repeat every five minutes while the
-  fault condition remains active.
-
+alias: PoolGuard – Pump On Without Water Motion
 triggers:
-  - trigger: template
+  - trigger: time_pattern
+    minutes: "/1"
+conditions:
+  - condition: state
+    entity_id: switch.pool_pump
+    state: "on"
+  - condition: state
+    entity_id: binary_sensor.poolguard_pump_detected
+    state: "off"
+  - condition: state
+    entity_id: binary_sensor.poolguard_person_detected
+    state: "off"
+  - condition: state
+    entity_id: binary_sensor.poolguard_no_data
+    state: "off"
+  - condition: template
     value_template: >-
-      {{
-        is_state('switch.shellyplugmg3_08927254033c', 'on')
-        and
-        is_state('binary_sensor.poolguard_pump_detected', 'off')
-      }}
-    for:
-      minutes: 5
-
-conditions: []
-
+      {% set since = [states.switch.pool_pump.last_changed,
+        states.binary_sensor.poolguard_pump_detected.last_changed,
+        states.binary_sensor.poolguard_person_detected.last_changed] | max %}
+      {{ now() - since >= timedelta(minutes=5) }}
+  - condition: template
+    value_template: >-
+      {% set last = this.attributes.get('last_triggered') %}
+      {{ last is none or now() - last >= timedelta(minutes=5) }}
 actions:
-  - repeat:
-      while:
-        - condition: state
-          entity_id: switch.shellyplugmg3_08927254033c
-          state: "on"
-
-        - condition: state
-          entity_id: binary_sensor.poolguard_pump_detected
-          state: "off"
-
-      sequence:
-        - action: notify.mobile_app_iphone_17_von_tobi
-          data:
-            title: "🚨 PoolGuard: Pump running without circulation!"
-            message: >-
-              The pump Shelly is switched on, but PoolGuard does not detect
-              the expected water movement from normal circulation.
-
-              Please check the pool system immediately.
-
-              Possible causes:
-              - multiport valve still set to backwash/waste
-              - missing water flow
-              - blocked circulation
-              - pump problem
-            data:
-              push:
-                interruption-level: critical
-
-        - delay:
-            minutes: 5
-
-mode: restart
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "PoolGuard: Pump without typical water motion"
+      message: "Calibrated pump motion has been absent for at least five minutes. Check pump, flow and valve position."
+mode: single
 ```
+
+
 ### 5. High water level alert
 
-PoolGuard can be used not only to detect a low water level, but also to warn when the pool water level becomes **too high**.
-
-This can be useful, for example, after heavy rainfall or while filling the pool.
-
-The following Home Assistant automation sends a critical notification when the distance between PoolGuard and the water surface drops below **3 cm**.
-
-The warning is then repeated **every 15 minutes** for as long as the water level remains too high.
-
-> **Note:** The `3 cm` threshold is only an example. Adjust it according to the sensor installation height and the desired maximum pool water level.
+`Distance to Water` updates only from a reliable quiet burst. The example 3 cm threshold depends on installation. No Data prevents repetitions caused by an old frozen value.
 
 ```yaml
-alias: PoolGuard – High Water Level
-description: >
-  Sends a critical warning when the water surface is less than 3 cm
-  from the PoolGuard sensor. The warning is repeated every 15 minutes
-  while the pool water level remains too high.
-
+alias: PoolGuard – Pool Too Full
 triggers:
   - trigger: numeric_state
     entity_id: sensor.poolguard_distance_to_water
     below: 3
-
-conditions: []
-
+  - trigger: time_pattern
+    minutes: "/15"
+  - trigger: homeassistant
+    event: start
+conditions:
+  - condition: numeric_state
+    entity_id: sensor.poolguard_distance_to_water
+    below: 3
+  - condition: state
+    entity_id: binary_sensor.poolguard_no_data
+    state: "off"
 actions:
-  - repeat:
-      while:
-        - condition: numeric_state
-          entity_id: sensor.poolguard_distance_to_water
-          below: 3
-
-      sequence:
-        - action: notify.mobile_app_YOUR_PHONE
-          data:
-            title: "🚨 PoolGuard: Water level too high!"
-            message: >-
-              The pool water level is too high.
-
-              Distance between sensor and water surface:
-              {{ states('sensor.poolguard_distance_to_water') | float(0) | round(1) }} cm
-
-              Current water depth:
-              {{ states('sensor.poolguard_water_depth') | float(0) | round(1) }} cm
-
-              Please check the pool water level.
-            data:
-              push:
-                interruption-level: critical
-
-        - delay:
-            minutes: 15
-
-mode: restart
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "PoolGuard: Pool too full"
+      message: >-
+        Reliable distance to water:
+        {{ states('sensor.poolguard_distance_to_water') }} cm.
+        Please check the pool level.
+      data:
+        push:
+          interruption-level: critical
+mode: single
 ```
 
-Replace `notify.mobile_app_YOUR_PHONE` with your own Home Assistant notification service.
 
-This automation does **not** control the pool pump or change any PoolGuard settings. It is used for notification purposes only.
 
----
+### 6. Sensor Flood Risk
 
-> **Important:** These automations are examples only. Entity IDs, notification services, delay times and shutdown behaviour must be adapted to the actual installation. Pump and person/activity detection are based on water-surface motion and must not be treated as a certified safety system.
+High Water and Sensor Flood Risk differ deliberately: High Water is a precise quiet-only distance; Flood Risk protects the sensor and may inspect moving water for repeated dangerous approaches.
+
+```yaml
+alias: PoolGuard – Sensor Flood Risk
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.poolguard_sensor_flood_risk
+    from: "off"
+    to: "on"
+  - trigger: time_pattern
+    minutes: "/15"
+  - trigger: homeassistant
+    event: start
+conditions:
+  - condition: state
+    entity_id: binary_sensor.poolguard_sensor_flood_risk
+    state: "on"
+  - condition: state
+    entity_id: binary_sensor.poolguard_no_data
+    state: "off"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "PoolGuard: Sensor flood risk"
+      message: >-
+        Water is repeatedly getting dangerously close to the ultrasonic sensor.
+        Last reliable quiet distance:
+        {{ states('sensor.poolguard_distance_to_water') }} cm.
+        Check PoolGuard and the pool level.
+      data:
+        push:
+          interruption-level: critical
+mode: single
+```
+
+
+
+### 7. Offline/no-data warning
+
+The ESP being currently unavailable during deep sleep is normal. “Offline” here means no complete successful report for more than three hours. **Status Heartbeat** is the source.
+
+```yaml
+template:
+  - binary_sensor:
+      - name: PoolGuard No Data
+        unique_id: poolguard_no_data
+        state: >-
+          {% set e = states.sensor.poolguard_status_heartbeat %}
+          {{ e is not none
+             and e.state not in ['unknown', 'unavailable']
+             and (now() - e.last_updated).total_seconds() > 10800 }}
+```
+
+```yaml
+alias: PoolGuard – Offline Warning
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.poolguard_no_data
+    from: "off"
+    to: "on"
+  - trigger: time
+    at: "12:00:00"
+  - trigger: homeassistant
+    event: start
+conditions:
+  - condition: state
+    entity_id: binary_sensor.poolguard_no_data
+    state: "on"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "PoolGuard: No data"
+      message: "No successful report for more than three hours. Check PoolGuard, Wi-Fi and battery."
+mode: single
+```
+
+10800 seconds is three hours. After an HA restart, `last_updated` may initially look fresh and delay detection; no extra persistent timestamp helper is deliberately required.
+
+
+
+### 8. Optional algae-risk indicator
+
+PoolGuard **does not detect algae**. This is only a simplified temperature-based environmental advisory in Home Assistant, not a biological measurement, water analysis or disinfection measurement. It uses pool temperature, a real local outdoor thermometer and the maximum forecast temperature over the next 24 hours. Never derive automatic pump or chemical dosing from it.
+
+```yaml
+template:
+  - triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: time_pattern
+        minutes: "/15"
+    actions:
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.home
+        data:
+          type: hourly
+        response_variable: pool_weather
+    sensor:
+      - name: Pool Algae Risk
+        unique_id: pool_algae_risk
+        icon: mdi:algae
+        state: >-
+          {% set pool = states('sensor.poolguard_water_temperature') | float(none) %}
+          {% set outside = states('sensor.outdoor_temperature') | float(none) %}
+          {% set forecast = pool_weather['weather.home'].forecast[:24]
+             if pool_weather is defined and 'weather.home' in pool_weather else [] %}
+          {% set temps = forecast | map(attribute='temperature')
+             | select('defined') | list %}
+          {% set forecast_max = temps | max if temps | count > 0 else none %}
+          {% if outside is not none and forecast_max is not none %}
+            {% set ambient_peak = [outside, forecast_max] | max %}
+          {% elif forecast_max is not none %}
+            {% set ambient_peak = forecast_max %}
+          {% else %}
+            {% set ambient_peak = outside %}
+          {% endif %}
+          {% if pool is none %}
+            Unknown
+          {% elif pool >= 29 %}
+            High
+          {% elif pool >= 27 and ambient_peak is not none and ambient_peak >= 27 %}
+            High
+          {% elif pool >= 24 %}
+            Elevated
+          {% elif pool >= 22 and ambient_peak is not none and ambient_peak >= 28 %}
+            Elevated
+          {% else %}
+            Low
+          {% endif %}
+        attributes:
+          forecast_peak_24h: "{{ forecast_max }}"
+          ambient_peak: "{{ ambient_peak }}"
+          uv_index: "{{ state_attr('weather.home', 'uv_index') }}"
+```
+
+Logic: unknown pool temperature → Unknown; 29 °C or more → High; 27 °C or more with ambient peak at least 27 °C → High; 24 °C or more → Elevated; 22 °C or more with ambient peak at least 28 °C → Elevated; otherwise Low. Ambient peak is the higher of current local outdoor temperature and the 24-hour forecast maximum.
+
+UV index is exposed only as an informative attribute. It is primarily a human-health indicator, is not linearly related to algae, may inhibit some algae directly, and can indirectly matter in chlorinated pools through faster free-chlorine loss. Without free chlorine, pH and disinfection reserve, a more precise “probability” would be false precision.
+
+```yaml
+alias: PoolGuard – Algae Risk Advisory
+triggers:
+  - trigger: state
+    entity_id: sensor.pool_algae_risk
+    to: "High"
+  - trigger: time
+    at: "12:00:00"
+conditions:
+  - condition: state
+    entity_id: sensor.pool_algae_risk
+    state: "High"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: "PoolGuard: elevated algae risk"
+      message: "Temperature-based advisory: check water care and filtration time."
+mode: single
+```
+
+
 
 ## Maintenance Mode
 
@@ -442,7 +572,7 @@ In Initial Setup Mode, run these three buttons in order if possible:
 
 Each phase measures about 60 seconds and stores the median motion profile. Motion is evaluated from a trimmed sample span so single outliers or splashes have less influence than a raw min/max range. If the profiles are clearly ordered `quiet < pump < person`, PoolGuard automatically calculates the pump and person/activity thresholds. If they overlap, the previous or fallback thresholds remain active.
 
-The three values describe increasing water-surface movement: Quiet Motion is the baseline noise, Pump Motion is normal circulation, and Person Motion is typical bathing activity. For example, profiles of Quiet 0.50 cm, Pump 0.90 cm and Person 1.45 cm are correctly ordered. PoolGuard places the learned pump threshold halfway between Quiet and Pump (0.70 cm) and the person threshold halfway between Pump and Person (about 1.18 cm).
+The three values describe increasing water-surface movement: Quiet Motion is baseline noise, Pump Motion is normal circulation, and Person Motion is typical bathing activity. Profiles of Quiet 0.50 cm, Pump 0.90 cm and Person 1.45 cm are formally ordered. PoolGuard puts the pump threshold halfway between Quiet and Pump (0.70 cm), but the person entry threshold 65% of the way from Pump to Person (about 1.26 cm); clearing uses the midpoint. Firmware checks strict ordering only, not statistical separation. Closely spaced profiles can therefore be valid yet hard to distinguish in practice.
 
 ### Recalibrating individual profiles later
 
@@ -493,6 +623,18 @@ More detail: [Moisture, condensation and silica gel](docs/ENVIRONMENT.md).
     <td align="center"><em>Sensor side of the completed carrier fitted to the original skimmer lid.</em></td>
   </tr>
 </table>
+
+## Seasonal operation
+
+At season start: (1) mount PoolGuard and inspect battery, seals, cable entries and silica gel, (2) verify water reference and geometry, (3) set Minimum Safe Water Depth, (4) calibrate Quiet, (5) Pump and (6) Person/Activity, (7) disable Maintenance and (8) confirm deep sleep. Normal operation is always wake → measure → decide locally → report a relevant change or periodic status → sleep. Maintenance and Initial Setup deliberately keep the device awake for service/commissioning and use far more energy; do not use them normally. There is no exact battery-level sensor. No Data/Heartbeat indirectly covers an empty battery, Wi-Fi/API trouble or device failure without promising remaining runtime. At season end, remove and dry the device, inspect for corrosion and store the battery appropriately.
+
+## What PoolGuard does not do
+
+PoolGuard is not a certified person, drowning, overflow or dry-run safety system and cannot replace supervision or compliant electrical/mechanical protection. It has no camera: “Person detected” means strong water movement. It measures neither algae, chlorine nor pH, calculates no exact algae probability and has no real battery gauge. During arbitrary strong movement neither pump state nor a new water level is always determinable; HA retains the last quiet level. Pump/no-motion mismatch is a warning only and does not automatically stop the pump.
+
+## Technical settings
+
+Normal users operate Maintenance and commissioning/calibration values. HA-adjustable settings, stored only when changed, are **Measurement Interval** (1–15, default 2 minutes), **Periodic Report Every** (1–120, default 30 wakes), reference, safe minimum depth and temperature offset. YAML substitutions cover technical tuning: 5 s A02 burst, 200 ms startup, 2 ms trigger LOW, an approximately 80 ms trigger cadence (2 + 78 ms), confirmation cycles, 1.5/3.0 cm fallbacks, 180-minute cooldown, five backoff wakes, pool geometry, and 5.0 cm Flood Risk distance with 1.0 cm clear hysteresis. The 3 mm report threshold is fixed in code. Flood Risk is mechanical clearance and must suit mounting height.
 
 ## Quick start
 
