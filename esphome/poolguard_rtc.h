@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 #include "esp_attr.h"
+#include "esp_system.h"
+#include "esp_sleep.h"
 
 // Kept in ESP32 RTC memory so the configurable low-power detection loop does
 // not write flash on every deep-sleep cycle. A full power loss resets this state.
