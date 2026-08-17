@@ -31,7 +31,7 @@ substitutions:
   low_water_hysteresis_cm: "1.0"
   # A single low reading is treated as a candidate only. Low Water becomes
   # active after this many consecutive measurement cycles below the limit.
-  low_water_confirm_cycles: "2"
+  low_water_confirm_cycles: "3"
 
   # Fallback motion thresholds used until a complete valid calibration exists.
   pump_motion_threshold_cm: "1.5"
@@ -62,6 +62,11 @@ esphome:
     priority: 600
     then:
       - lambda: |-
+          ESP_LOGI("poolguard",
+                   "BOOT DIAGNOSTICS: reset_reason=%d wakeup_cause=%d",
+                   (int) esp_reset_reason(),
+                   (int) esp_sleep_get_wakeup_cause());
+
           if (poolguard_rtc.magic != POOLGUARD_RTC_MAGIC) {
             poolguard_rtc.magic = POOLGUARD_RTC_MAGIC;
             poolguard_rtc.report_sequence = 0;
@@ -1062,8 +1067,24 @@ script:
             id(water_level_percent).publish_state(level_pct);
             id(pool_volume_m3).publish_state(volume_m3);
 
-            const float low_limit = id(minimum_safe_water_depth).state;
-            const float low_clear = low_limit + ${low_water_hysteresis_cm};
+            const float configured_low_limit = id(minimum_safe_water_depth).state;
+
+            // The running circulation pump lowers the local water level in the
+            // skimmer by roughly 2.5–3 cm. This is normal hydraulic drawdown and
+            // must not be interpreted as an actual loss of pool water.
+            //
+            // Pump OFF -> normal user configured limit.
+            // Pump ON  -> emergency limit of 99 cm.
+            const float low_limit =
+                poolguard_rtc.pump_state
+                    ? std::min(
+                          configured_low_limit,
+                          POOLGUARD_PUMP_RUNNING_LOW_WATER_DEPTH_CM)
+                    : configured_low_limit;
+
+            const float low_clear =
+                low_limit + ${low_water_hysteresis_cm};
+
             if (!poolguard_rtc.low_water_state) {
               if (depth_cm <= low_limit) {
                 if (poolguard_rtc.low_water_on_streak < 255)
@@ -1110,87 +1131,178 @@ script:
             ESP_LOGW("poolguard", "Water level not calibrated yet");
           }
 
-          const float pump_threshold = id(learned_pump_threshold_cm) > 0.0f
-              ? id(learned_pump_threshold_cm) : ${pump_motion_threshold_cm};
+          const float pump_threshold =
+              id(learned_pump_threshold_cm) > 0.0f
+                  ? id(learned_pump_threshold_cm)
+                  : ${pump_motion_threshold_cm};
+
           const bool valid_person_profiles =
               id(calibrated_pump_cm) >= 0.0f &&
               id(calibrated_person_cm) > id(calibrated_pump_cm);
-          const float person_on_threshold = valid_person_profiles
-              ? id(calibrated_pump_cm) + ${person_profile_on_fraction}f *
-                    (id(calibrated_person_cm) - id(calibrated_pump_cm))
-              : (id(learned_person_threshold_cm) > 0.0f
-                    ? id(learned_person_threshold_cm) : ${person_motion_threshold_cm});
-          const float person_clear_threshold = valid_person_profiles
-              ? id(calibrated_pump_cm) + ${person_profile_clear_fraction}f *
-                    (id(calibrated_person_cm) - id(calibrated_pump_cm))
-              : person_on_threshold * 0.85f;
+
+          const float person_on_threshold =
+              valid_person_profiles
+                  ? id(calibrated_pump_cm) +
+                        ${person_profile_on_fraction}f *
+                            (id(calibrated_person_cm) -
+                             id(calibrated_pump_cm))
+                  : (id(learned_person_threshold_cm) > 0.0f
+                         ? id(learned_person_threshold_cm)
+                         : ${person_motion_threshold_cm});
+
+          const float person_clear_threshold =
+              valid_person_profiles
+                  ? id(calibrated_pump_cm) +
+                        ${person_profile_clear_fraction}f *
+                            (id(calibrated_person_cm) -
+                             id(calibrated_pump_cm))
+                  : person_on_threshold * 0.85f;
+
           id(active_pump_threshold).publish_state(pump_threshold);
           id(active_person_threshold).publish_state(person_on_threshold);
 
           const bool halves_valid =
-              std::isfinite(first_half_motion) && std::isfinite(second_half_motion);
-          const bool person_on_evidence = halves_valid
-              ? (first_half_motion >= person_on_threshold &&
-                 second_half_motion >= person_on_threshold)
-              : motion_cm >= person_on_threshold;
-          const bool person_clear_evidence = halves_valid
-              ? (first_half_motion < person_clear_threshold &&
-                 second_half_motion < person_clear_threshold)
-              : motion_cm < person_clear_threshold;
+              std::isfinite(first_half_motion) &&
+              std::isfinite(second_half_motion);
+
+          const bool person_on_evidence =
+              halves_valid
+                  ? (first_half_motion >= person_on_threshold &&
+                     second_half_motion >= person_on_threshold)
+                  : motion_cm >= person_on_threshold;
+
+          const bool person_clear_evidence =
+              halves_valid
+                  ? (first_half_motion < person_clear_threshold &&
+                     second_half_motion < person_clear_threshold)
+                  : motion_cm < person_clear_threshold;
+
+
+          // ------------------------------------------------------------
+          // PUMP
+          //
+          // Pump detection is always evaluated independently.
+          // A previously detected person must never freeze the pump state.
+          // ------------------------------------------------------------
+
+          const bool raw_pump =
+              motion_cm >= pump_threshold;
+
+          if (raw_pump) {
+
+            poolguard_rtc.pump_off_streak = 0;
+
+            if (!poolguard_rtc.pump_state) {
+
+              if (poolguard_rtc.pump_on_streak < 255)
+                poolguard_rtc.pump_on_streak++;
+
+              if (poolguard_rtc.pump_on_streak >=
+                  ${pump_confirm_cycles}) {
+
+                poolguard_rtc.pump_state = 1;
+                poolguard_rtc.pump_on_streak = 0;
+
+                ESP_LOGI(
+                    "poolguard",
+                    "Pump confirmed before person/low-water evaluation");
+              }
+
+            } else {
+
+              poolguard_rtc.pump_on_streak = 0;
+            }
+
+          } else {
+
+            poolguard_rtc.pump_on_streak = 0;
+
+            if (poolguard_rtc.pump_state) {
+
+              if (poolguard_rtc.pump_off_streak < 255)
+                poolguard_rtc.pump_off_streak++;
+
+              if (poolguard_rtc.pump_off_streak >=
+                  ${pump_confirm_cycles}) {
+
+                poolguard_rtc.pump_state = 0;
+                poolguard_rtc.pump_off_streak = 0;
+
+                ESP_LOGI(
+                    "poolguard",
+                    "Pump stop confirmed");
+              }
+
+            } else {
+
+              poolguard_rtc.pump_off_streak = 0;
+            }
+          }
+
+
+          // ------------------------------------------------------------
+          // PERSON
+          //
+          // Do not start a NEW person state while the circulation pump
+          // is already confirmed as running. The installed pump produces
+          // sustained surface movement which overlaps the learned person
+          // motion profile and has produced repeated false alarms.
+          //
+          // An existing person state is still allowed to clear normally.
+          // ------------------------------------------------------------
 
           if (!poolguard_rtc.person_state) {
+
             poolguard_rtc.person_off_streak = 0;
-            if (person_on_evidence) {
+
+            if (poolguard_rtc.pump_state) {
+
+              // Confirmed pump motion must not manufacture a person alarm.
+              poolguard_rtc.person_on_streak = 0;
+
+              if (person_on_evidence) {
+                ESP_LOGD(
+                    "poolguard",
+                    "Person-like motion ignored while pump is confirmed running");
+              }
+
+            } else if (person_on_evidence) {
+
               poolguard_rtc.person_on_streak++;
-              if (poolguard_rtc.person_on_streak >= ${person_on_confirm_cycles}) {
+
+              if (poolguard_rtc.person_on_streak >=
+                  ${person_on_confirm_cycles}) {
+
                 poolguard_rtc.person_state = 1;
                 poolguard_rtc.person_on_streak = 0;
               }
+
             } else {
+
               poolguard_rtc.person_on_streak = 0;
             }
+
           } else {
+
             poolguard_rtc.person_on_streak = 0;
+
             if (person_clear_evidence) {
+
               poolguard_rtc.person_off_streak++;
-              if (poolguard_rtc.person_off_streak >= ${person_off_confirm_cycles}) {
+
+              if (poolguard_rtc.person_off_streak >=
+                  ${person_off_confirm_cycles}) {
+
                 poolguard_rtc.person_state = 0;
                 poolguard_rtc.person_off_streak = 0;
               }
+
             } else {
-              // Hysteresis zone or continuing activity: keep the current person
-              // state and cancel any pending clear streak.
+
               poolguard_rtc.person_off_streak = 0;
             }
           }
 
-          // Pump state is intentionally held while person-like motion is active.
-          if (!poolguard_rtc.person_state) {
-            const bool raw_pump = motion_cm >= pump_threshold;
-            if (raw_pump) {
-              poolguard_rtc.pump_off_streak = 0;
-              if (!poolguard_rtc.pump_state) {
-                poolguard_rtc.pump_on_streak++;
-                if (poolguard_rtc.pump_on_streak >= ${pump_confirm_cycles}) {
-                  poolguard_rtc.pump_state = 1;
-                  poolguard_rtc.pump_on_streak = 0;
-                }
-              } else {
-                poolguard_rtc.pump_on_streak = 0;
-              }
-            } else {
-              poolguard_rtc.pump_on_streak = 0;
-              if (poolguard_rtc.pump_state) {
-                poolguard_rtc.pump_off_streak++;
-                if (poolguard_rtc.pump_off_streak >= ${pump_confirm_cycles}) {
-                  poolguard_rtc.pump_state = 0;
-                  poolguard_rtc.pump_off_streak = 0;
-                }
-              } else {
-                poolguard_rtc.pump_off_streak = 0;
-              }
-            }
-          }
 
           id(pump_detected).publish_state(poolguard_rtc.pump_state != 0);
           id(person_detected).publish_state(poolguard_rtc.person_state != 0);
@@ -1376,7 +1488,7 @@ deep_sleep:
 # The exact depth of the confirming measurement is retained in RTC memory and
 # exposed as "Low Water Trigger Depth" for diagnostics and HA notifications.
 #
-# POOL VOLUME
+# POOL VOLUM
 # Volume assumes a cylinder: pi * radius^2 * current water depth.
 # Defaults: diameter 5.0 m, maximum depth 120 cm. At 120 cm this is ~23.56 m3.
 #
