@@ -47,12 +47,12 @@ Eine unabhängige RTC-Wake-Sequenz schützt wake-basierte Bestätigungen vor meh
 
 | Bauteil | Verwendung | Link |
 |---|---|---|
-| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | [Amazon](https://www.amazon.de/dp/B0iQQg2zF) |
-| USB-C Breakout-Kabel | Stromversorgung / Anschluss | [Amazon](https://www.amazon.de/dp/B0eO8jr4N) |
-| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche | [Amazon](https://www.amazon.de/dp/B0dWRfbC4) |
-| Wasserdichter DS18B20 | Wassertemperatur | [Amazon](https://www.amazon.de/dp/B08FcJbtj) |
+| Seeed Studio XIAO ESP32-C3 | Mikrocontroller / ESPHome | [Amazon](https://link.amazon/B04XtFfa2) | 
+| USB-C Breakout-Kabel | Stromversorgung / Anschluss | |
+| DFRobot A02YYUW | Abstandsmessung zur Wasseroberfläche |  |
+| Wasserdichter DS18B20 | Wassertemperatur |  |
 | Geschützte 18650 Li-Ion-Zelle | Stromversorgung | – |
-| 18650-Batteriehalter | Aufnahme des Akkus | [Amazon](https://www.amazon.de/dp/B0hraa6X7) |
+| 18650-Batteriehalter | Aufnahme des Akkus |  |
 | **Pololu Mini MOSFET Slide Switch LV #2810** | A02YYUW im Deep Sleep vollständig abschalten | [Pololu](https://www.pololu.com/product/2810) |
 
 > **Affiliate-Hinweis:** Einige Produktlinks können Affiliate-Links sein. Wenn du darüber etwas kaufst, erhalte ich möglicherweise eine kleine Provision. Für dich ändert sich der Preis dadurch nicht.
