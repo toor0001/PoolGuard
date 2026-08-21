@@ -632,6 +632,18 @@ At season start: (1) mount PoolGuard and inspect battery, seals, cable entries a
 
 PoolGuard is not a certified person, drowning, overflow or dry-run safety system and cannot replace supervision or compliant electrical/mechanical protection. It has no camera: “Person detected” means strong water movement. It measures neither algae, chlorine nor pH, calculates no exact algae probability and has no real battery gauge. During arbitrary strong movement neither pump state nor a new water level is always determinable; HA retains the last quiet level. Pump/no-motion mismatch is a warning only and does not automatically stop the pump.
 
+## Backlog
+
+### Switchable battery voltage measurement
+
+A future hardware revision may add measurement of the actual battery voltage. Instead of using a permanently connected resistor divider, the measurement path should be enabled through a MOSFET or load switch only while a measurement is being taken. This prevents the voltage divider from causing continuous quiescent current during deep sleep.
+
+After a short settling time, the battery voltage could be sampled several times through an ADC input to obtain a stable reading. The complete measurement path would then be disconnected from the battery again.
+
+This change is deliberately not implemented in the current hardware revision because it would require additional hardware. The existing `Status Heartbeat` and Home Assistant `No Data` monitoring already provide a reliable way to detect when PoolGuard stops reporting because of an empty battery, communication problems or another device failure.
+
+Any battery percentage derived from the measured voltage would also remain an estimate: the actual state of charge of a single Li-ion cell cannot be determined precisely from voltage alone.
+
 ## Technical settings
 
 Normal users operate Maintenance and commissioning/calibration values. HA-adjustable settings, stored only when changed, are **Measurement Interval** (1–15, default 2 minutes), **Periodic Report Every** (1–120, default 30 wakes), reference, safe minimum depth and temperature offset. YAML substitutions cover technical tuning: 5 s A02 burst, 200 ms startup, 2 ms trigger LOW, an approximately 80 ms trigger cadence (2 + 78 ms), confirmation cycles, 1.5/3.0 cm fallbacks, 180-minute cooldown, five backoff wakes, pool geometry, and 5.0 cm Flood Risk distance with 1.0 cm clear hysteresis. The 3 mm report threshold is fixed in code. Flood Risk is mechanical clearance and must suit mounting height.
