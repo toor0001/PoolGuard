@@ -633,6 +633,18 @@ Zu Saisonbeginn: (1) PoolGuard montieren, Akku/Dichtungen/Kabeldurchführungen/S
 
 PoolGuard ist kein zertifiziertes Personen-, Ertrinkungs-, Überlauf- oder Trockenlaufschutzsystem und ersetzt weder Aufsicht noch normgerechte elektrische/mechanische Schutztechnik. Es besitzt keine Kamera: „Person detected“ bedeutet starke Wasserbewegung. Es misst weder Algen, Chlor noch pH, berechnet keine exakte Algenwahrscheinlichkeit und besitzt keinen echten Batteriestandsmesser. Während jeder denkbaren starken Bewegung ist weder Pumpenzustand noch Wasserstand sicher neu bestimmbar; HA zeigt dann den letzten ruhigen Wasserstand. Der Pump/no-motion-Mismatch ist nur eine Warnung und schaltet die Pumpe nicht automatisch ab.
 
+## Backlog
+
+### Abschaltbare Batteriestandsmessung
+
+Für eine spätere Hardware-Revision ist eine Messung der tatsächlichen Batteriespannung vorgesehen. Statt eines dauerhaft angeschlossenen Spannungsteilers soll der Messzweig über einen MOSFET oder Load-Switch nur während eines Messzyklus zugeschaltet werden. Dadurch verursacht der Spannungsteiler während des Deep Sleep keinen dauerhaften Ruhestrom.
+
+Nach einer kurzen Einschwingzeit kann die Batteriespannung über einen ADC-Eingang mehrfach gemessen und daraus ein stabiler Messwert gebildet werden. Anschließend wird der komplette Messzweig wieder von der Batterie getrennt.
+
+Diese Änderung wird in der aktuellen Hardware-Revision bewusst nicht umgesetzt, da dafür zusätzliche Hardware erforderlich wäre. Der vorhandene `Status Heartbeat` bzw. die Home-Assistant-Überwachung `No Data` erkennt bereits zuverlässig, wenn PoolGuard aufgrund einer leeren Batterie, eines Kommunikationsproblems oder eines anderen Ausfalls keine Berichte mehr sendet.
+
+Eine aus der Batteriespannung abgeleitete Prozentanzeige wäre zudem nur eine Schätzung: Bei einer einzelnen Li-Ion-Zelle lässt sich der tatsächliche Ladezustand allein aus der Spannung nicht exakt bestimmen.
+
 ## Technische Einstellungen
 
 Normale Nutzer bedienen Maintenance und die Inbetriebnahme-/Kalibrierungswerte. In HA einstellbar und nur bei Änderung gespeichert sind **Measurement Interval** (1–15, Standard 2 Minuten), **Periodic Report Every** (1–120, Standard 30 Wakes), Referenz, sichere Mindesttiefe und Temperatur-Offset. YAML-Substitutionen sind für technische Anpassung: A02-Burst 5 s, Startup 200 ms, Trigger LOW 2 ms, Trigger-Raster ungefähr 80 ms (2 + 78 ms), Bestätigungszyklen, Fallbacks 1,5/3,0 cm, 180-Minuten-Cooldown, fünf Backoff-Wakes, Poolgeometrie sowie 5,0 cm Flood-Risk-Abstand plus 1,0 cm Löschhysterese. Die 3-mm-Reportgrenze ist fest im Code. Flood Risk ist mechanische Sicherheitsfreiheit und muss zur Einbauhöhe passen.
